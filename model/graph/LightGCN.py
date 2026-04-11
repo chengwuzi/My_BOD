@@ -14,10 +14,11 @@ class LightGCN(GraphRecommender):
         super(LightGCN, self).__init__(conf, training_set, test_set)
         args = OptionConf(self.config['LightGCN'])
         self.n_layers = int(args['-n_layer'])
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.model = LGCN_Encoder(self.data, self.emb_size, self.n_layers)
 
     def train(self):
-        model = self.model.cuda()
+        model = self.model.to(self.device)
         optimizer = torch.optim.Adam(model.parameters(), lr=self.lRate)
         for epoch in range(self.maxEpoch):
             start_time = time.time()
@@ -62,7 +63,7 @@ class LGCN_Encoder(nn.Module):
         self.layers = n_layers
         self.norm_adj = data.norm_adj
         self.embedding_dict = self._init_model()
-        self.sparse_norm_adj = TorchGraphInterface.convert_sparse_mat_to_tensor(self.norm_adj).cuda()
+        self.register_buffer('sparse_norm_adj', TorchGraphInterface.convert_sparse_mat_to_tensor(self.norm_adj))
 
     def _init_model(self):
         initializer = nn.init.xavier_uniform_

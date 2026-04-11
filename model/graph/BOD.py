@@ -14,7 +14,8 @@ from data.ui_graph import Interaction
 
 
 def match_loss(gw_syn, gw_real, dis_metric):
-    dis = torch.tensor(0.0).to('cuda')
+    device = gw_real[0].device if len(gw_real) > 0 else torch.device('cpu')
+    dis = torch.tensor(0.0, device=device)
     if dis_metric == 'ours':
         for ig in range(len(gw_real)):
             gwr = gw_real[ig]
@@ -51,6 +52,7 @@ def distance_wb(gwr, gws):
 class BOD(GraphRecommender):
     def __init__(self, conf, training_set, test_set):
         super(BOD, self).__init__(conf, training_set, test_set)
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.trainmodel = self.config['trainmodel']
         self.generator = self.config['generator']
         self.datasetname = self.config['dataset.name']
@@ -83,11 +85,11 @@ class BOD(GraphRecommender):
 
     def train(self):
         torch.autograd.set_detect_anomaly(True)
-        model = self.model.cuda()
+        model = self.model.to(self.device)
         model_parameters = list(model.parameters())
         optimizer = torch.optim.Adam(model.parameters(), lr=self.lRate)
         
-        model_generator = self.model_generator.cuda()
+        model_generator = self.model_generator.to(self.device)
         optimizer_generator = torch.optim.Adam(model_generator.parameters(), lr=self.generator_lr)
 
         ol_batch_size = self.batch_size
@@ -142,7 +144,7 @@ class BOD(GraphRecommender):
 
             print("start generator training...")
             for ol_iter in range(self.outer_loop):
-                loss = torch.tensor(0.0).to('cuda')
+                loss = torch.tensor(0.0, device=self.device)
                 model_generator.train()
                 batch_ol = sample_batch_pairwise(self.data, ol_batch_size)
                 u_idx_ol, i_idx_ol, j_idx_ol = batch_ol
@@ -254,7 +256,7 @@ class LGCN_Encoder(nn.Module):
         self.layers = n_layers
         self.norm_adj = data.norm_adj
         self.embedding_dict = self._init_model()
-        self.sparse_norm_adj = TorchGraphInterface.convert_sparse_mat_to_tensor(self.norm_adj).cuda()
+        self.register_buffer('sparse_norm_adj', TorchGraphInterface.convert_sparse_mat_to_tensor(self.norm_adj))
 
     def _init_model(self):
         initializer = nn.init.xavier_uniform_
@@ -285,7 +287,7 @@ class NGCF_Encoder(nn.Module):
         self.layers = n_layers
         self.norm_adj = data.norm_adj
         self.embedding_dict,self.W = self._init_model()
-        self.sparse_norm_adj = TorchGraphInterface.convert_sparse_mat_to_tensor(self.norm_adj).cuda()
+        self.register_buffer('sparse_norm_adj', TorchGraphInterface.convert_sparse_mat_to_tensor(self.norm_adj))
 
     def _init_model(self):
         initializer = nn.init.xavier_uniform_
@@ -325,7 +327,7 @@ class SimGCL_Encoder(nn.Module):
         self.n_layers = n_layers
         self.norm_adj = data.norm_adj
         self.embedding_dict = self._init_model()
-        self.sparse_norm_adj = TorchGraphInterface.convert_sparse_mat_to_tensor(self.norm_adj).cuda()
+        self.register_buffer('sparse_norm_adj', TorchGraphInterface.convert_sparse_mat_to_tensor(self.norm_adj))
 
     def _init_model(self):
         initializer = nn.init.xavier_uniform_
@@ -341,7 +343,7 @@ class SimGCL_Encoder(nn.Module):
         for k in range(self.n_layers):
             ego_embeddings = torch.sparse.mm(self.sparse_norm_adj, ego_embeddings)
             if perturbed:
-                random_noise = torch.rand_like(ego_embeddings).cuda()
+                random_noise = torch.rand_like(ego_embeddings)
                 ego_embeddings += torch.sign(ego_embeddings) * F.normalize(random_noise, dim=-1) * self.eps
             all_embeddings.append(ego_embeddings)
         all_embeddings = torch.stack(all_embeddings, dim=1)
@@ -350,8 +352,9 @@ class SimGCL_Encoder(nn.Module):
         return user_all_embeddings, item_all_embeddings
 
     def cal_cl_loss(self, idx):
-        u_idx = torch.unique(torch.Tensor(idx[0]).type(torch.long)).cuda()
-        i_idx = torch.unique(torch.Tensor(idx[1]).type(torch.long)).cuda()
+        device = self.sparse_norm_adj.device
+        u_idx = torch.unique(torch.tensor(idx[0], dtype=torch.long, device=device))
+        i_idx = torch.unique(torch.tensor(idx[1], dtype=torch.long, device=device))
         user_view_1, item_view_1 = self.forward(perturbed=True)
         user_view_2, item_view_2 = self.forward(perturbed=True)
         user_cl_loss = InfoNCE(user_view_1[u_idx], user_view_2[u_idx], 0.2)
@@ -369,7 +372,7 @@ class SGL_Encoder(nn.Module):
         self.aug_type = aug_type
         self.norm_adj = data.norm_adj
         self.embedding_dict = self._init_model()
-        self.sparse_norm_adj = TorchGraphInterface.convert_sparse_mat_to_tensor(self.norm_adj).cuda()
+        self.register_buffer('sparse_norm_adj', TorchGraphInterface.convert_sparse_mat_to_tensor(self.norm_adj))
 
     def _init_model(self):
         initializer = nn.init.xavier_uniform_
@@ -395,7 +398,7 @@ class SGL_Encoder(nn.Module):
         elif self.aug_type == 1 or self.aug_type == 2:
             dropped_mat = GraphAugmentor.edge_dropout(self.data.interaction_mat, self.drop_rate)
         dropped_mat = self.data.convert_to_laplacian_mat(dropped_mat)
-        return TorchGraphInterface.convert_sparse_mat_to_tensor(dropped_mat).cuda()
+        return TorchGraphInterface.convert_sparse_mat_to_tensor(dropped_mat, device=self.sparse_norm_adj.device)
 
     def forward(self, perturbed_adj=None):
         ego_embeddings = torch.cat([self.embedding_dict['user_emb'], self.embedding_dict['item_emb']], 0)
@@ -415,8 +418,9 @@ class SGL_Encoder(nn.Module):
         return user_all_embeddings, item_all_embeddings
 
     def cal_cl_loss(self, idx, perturbed_mat1, perturbed_mat2):
-        u_idx = torch.unique(torch.Tensor(idx[0]).type(torch.long)).cuda()
-        i_idx = torch.unique(torch.Tensor(idx[1]).type(torch.long)).cuda()
+        device = self.sparse_norm_adj.device
+        u_idx = torch.unique(torch.tensor(idx[0], dtype=torch.long, device=device))
+        i_idx = torch.unique(torch.tensor(idx[1], dtype=torch.long, device=device))
         user_view_1, item_view_1 = self.forward(perturbed_mat1)
         user_view_2, item_view_2 = self.forward(perturbed_mat2)
         view1 = torch.cat((user_view_1[u_idx],item_view_1[i_idx]),0)
