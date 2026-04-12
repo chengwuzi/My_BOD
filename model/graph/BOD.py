@@ -1,5 +1,4 @@
 from util.conf import OptionConf
-from tkinter.tix import Tree
 import torch
 import torch.nn as nn
 from base.graph_recommender import GraphRecommender
@@ -111,13 +110,18 @@ class BOD(GraphRecommender):
                     dropped_adj2 = model.graph_reconstruction()
                 for n, batch in enumerate(next_batch_pairwise(self.data, self.batch_size)):
                     u_idx, pos_i_idx, neg_i_idx = batch
+                    u_idx = torch.as_tensor(u_idx, device=self.device, dtype=torch.long)
+                    pos_i_idx = torch.as_tensor(pos_i_idx, device=self.device, dtype=torch.long)
+                    neg_i_idx = torch.as_tensor(neg_i_idx, device=self.device, dtype=torch.long)
                     pos_u_idx = u_idx
                     neg_u_idx = u_idx
                     
                     model.train()
                     rec_user_emb, rec_item_emb = model()
-                    pos_user_emb_syn, pos_item_emb_syn = rec_user_emb[pos_u_idx], rec_item_emb[pos_i_idx]
-                    neg_user_emb_syn, neg_item_emb_syn = rec_user_emb[neg_u_idx], rec_item_emb[neg_i_idx]
+                    pos_user_emb_syn = rec_user_emb.index_select(0, pos_u_idx)
+                    pos_item_emb_syn = rec_item_emb.index_select(0, pos_i_idx)
+                    neg_user_emb_syn = rec_user_emb.index_select(0, neg_u_idx)
+                    neg_item_emb_syn = rec_item_emb.index_select(0, neg_i_idx)
 
                     A_weight_user_item_full = model_generator(pos_user_emb_syn, pos_item_emb_syn)
                     A_weight_user_item_full_neg = model_generator(neg_user_emb_syn, neg_item_emb_syn)
@@ -136,8 +140,8 @@ class BOD(GraphRecommender):
                         cl_loss = 0
 
                     batch_loss_inner = self.weight_bpr * bpr_inner + self.weight_alignment * alignment_inner + self.weight_uniformity * uniformity_inner + cl_loss
-                    optimizer_generator.zero_grad()
-                    optimizer.zero_grad()
+                    optimizer_generator.zero_grad(set_to_none=True)
+                    optimizer.zero_grad(set_to_none=True)
                     batch_loss_inner.backward()
                     optimizer.step()
                     if n % 1000 == 0:
@@ -145,9 +149,13 @@ class BOD(GraphRecommender):
                         print('inner_batch_loss:', batch_loss_inner.item())
                 
                 with torch.no_grad():
-                    self.user_emb, self.item_emb = self.model()
+                    self.user_emb, self.item_emb = (emb.detach() for emb in self.model())
                 if epoch_iter % 5 == 0:
-                    self.fast_evaluation(inner_iter)
+                    self.fast_evaluation(epoch_iter)
+                    if self.device.type == 'cuda':
+                        self.user_emb = self.user_emb.cpu()
+                        self.item_emb = self.item_emb.cpu()
+                        torch.cuda.empty_cache()
             self.user_emb, self.item_emb = self.best_user_emb, self.best_item_emb
 
             print("start generator training...")
@@ -156,15 +164,21 @@ class BOD(GraphRecommender):
                 model_generator.train()
                 batch_ol = sample_batch_pairwise(self.data, ol_batch_size)
                 u_idx_ol, i_idx_ol, j_idx_ol = batch_ol
+                u_idx_ol = torch.as_tensor(u_idx_ol, device=self.device, dtype=torch.long)
+                i_idx_ol = torch.as_tensor(i_idx_ol, device=self.device, dtype=torch.long)
+                j_idx_ol = torch.as_tensor(j_idx_ol, device=self.device, dtype=torch.long)
                 pos_u_idx_ol = u_idx_ol
                 pos_i_idx_ol = i_idx_ol
                 neg_i_idx_ol = j_idx_ol   
                 
                 rec_user_emb, rec_item_emb = model()
-                user_emb_ol, item_emb_ol = rec_user_emb[u_idx_ol], rec_item_emb[i_idx_ol]
-                pos_user_emb_ol, pos_item_emb_ol, neg_item_emb_ol = rec_user_emb[pos_u_idx_ol], rec_item_emb[pos_i_idx_ol], rec_item_emb[neg_i_idx_ol]
+                user_emb_ol = rec_user_emb.index_select(0, u_idx_ol)
+                item_emb_ol = rec_item_emb.index_select(0, i_idx_ol)
+                pos_user_emb_ol = rec_user_emb.index_select(0, pos_u_idx_ol)
+                pos_item_emb_ol = rec_item_emb.index_select(0, pos_i_idx_ol)
+                neg_item_emb_ol = rec_item_emb.index_select(0, neg_i_idx_ol)
 
-                A_weight_user_item_pos = model_generator(pos_user_emb_ol, pos_user_emb_ol)
+                A_weight_user_item_pos = model_generator(pos_user_emb_ol, pos_item_emb_ol)
                 A_weight_user_item_neg = model_generator(pos_user_emb_ol, neg_item_emb_ol)
                 bpr_loss_ol = bpr_loss_weight(pos_user_emb_ol, pos_item_emb_ol, neg_item_emb_ol,A_weight_user_item_pos,A_weight_user_item_neg)
                 gw_real = torch.autograd.grad(bpr_loss_ol, model_parameters, retain_graph=True, create_graph=True)
@@ -178,7 +192,7 @@ class BOD(GraphRecommender):
                 loss_reg = l2_reg_loss(self.generator_reg, user_emb_ol, item_emb_ol)
                 loss = loss + loss_reg
 
-                optimizer_generator.zero_grad()
+                optimizer_generator.zero_grad(set_to_none=True)
                 loss.backward()
                 optimizer_generator.step()
                 print('epoch:', epoch_iter, 'outer_training_iter:', ol_iter, 'loss_real:', bpr_loss_ol.item(), 'loss_syn:', alignment_syn_ol.item())  
@@ -188,7 +202,9 @@ class BOD(GraphRecommender):
 
     def save(self):
         with torch.no_grad():
-            self.best_user_emb, self.best_item_emb = self.model.forward()
+            best_user_emb, best_item_emb = self.model.forward()
+            self.best_user_emb = best_user_emb.detach().cpu()
+            self.best_item_emb = best_item_emb.detach().cpu()
 
     def predict(self, u):
         with torch.no_grad():
