@@ -114,25 +114,29 @@ class BOD(GraphRecommender):
                     u_idx = torch.as_tensor(u_idx, device=self.device, dtype=torch.long)
                     pos_i_idx = torch.as_tensor(pos_i_idx, device=self.device, dtype=torch.long)
                     neg_i_idx = torch.as_tensor(neg_i_idx, device=self.device, dtype=torch.long)
-                    pos_u_idx = u_idx
-                    neg_u_idx = u_idx
                     
                     model.train()
                     rec_user_emb, rec_item_emb = model()
-                    pos_user_emb_syn = rec_user_emb.index_select(0, pos_u_idx)
+                    pos_user_emb_syn = rec_user_emb.index_select(0, u_idx)
                     pos_item_emb_syn = rec_item_emb.index_select(0, pos_i_idx)
-                    neg_user_emb_syn = rec_user_emb.index_select(0, neg_u_idx)
                     neg_item_emb_syn = rec_item_emb.index_select(0, neg_i_idx)
 
-                    A_weight_user_item_full = model_generator(pos_user_emb_syn, pos_item_emb_syn)
-                    A_weight_user_item_full_neg = model_generator(neg_user_emb_syn, neg_item_emb_syn)
-                    A_weight_inner_full_detach = A_weight_user_item_full.detach()
-                    A_weight_inner_full_neg_detach = A_weight_user_item_full_neg.detach()
+                    # The inner loop only updates the recommender. The generator acts as
+                    # a fixed scorer here, so we avoid building an unnecessary autograd graph.
+                    model_generator.eval()
+                    with torch.no_grad():
+                        A_weight_inner_full_detach = model_generator(pos_user_emb_syn, pos_item_emb_syn)
+                        A_weight_inner_full_neg_detach = model_generator(pos_user_emb_syn, neg_item_emb_syn)
                     
                     bpr_inner = bpr_loss_weight(pos_user_emb_syn, pos_item_emb_syn, neg_item_emb_syn, A_weight_inner_full_detach, A_weight_inner_full_neg_detach)
                     alignment_inner = alignment_loss_weight_1(pos_user_emb_syn, pos_item_emb_syn, A_weight_inner_full_detach)
 
-                    uniformity_inner = (uniformity_loss(pos_user_emb_syn) + uniformity_loss(neg_user_emb_syn) + uniformity_loss(pos_item_emb_syn) + uniformity_loss(neg_item_emb_syn)) / 4
+                    uniformity_inner = (
+                        uniformity_loss(pos_user_emb_syn) +
+                        uniformity_loss(pos_user_emb_syn) +
+                        uniformity_loss(pos_item_emb_syn) +
+                        uniformity_loss(neg_item_emb_syn)
+                    ) / 4
                     if self.trainmodel == "SimGCL":
                         cl_loss = 0.005 * model.cal_cl_loss([u_idx,pos_i_idx])
                     elif self.trainmodel == "SGL":
@@ -141,13 +145,17 @@ class BOD(GraphRecommender):
                         cl_loss = 0
 
                     batch_loss_inner = self.weight_bpr * bpr_inner + self.weight_alignment * alignment_inner + self.weight_uniformity * uniformity_inner + cl_loss
-                    optimizer_generator.zero_grad(set_to_none=True)
                     optimizer.zero_grad(set_to_none=True)
                     batch_loss_inner.backward()
                     optimizer.step()
                     if n % 1000 == 0:
-                        print('epoch:', epoch_iter, 'inner_training_iter:', inner_iter, 'inner_batch：', n)
+                        print('epoch:', epoch_iter, 'inner_training_iter:', inner_iter, 'inner_batch:', n)
                         print('inner_batch_loss:', batch_loss_inner.item())
+                    del u_idx, pos_i_idx, neg_i_idx, pos_user_emb_syn, pos_item_emb_syn, neg_item_emb_syn
+                    del A_weight_inner_full_detach, A_weight_inner_full_neg_detach
+                    del rec_user_emb, rec_item_emb, bpr_inner, alignment_inner, uniformity_inner, batch_loss_inner
+                    if self.device.type == 'cuda' and (n + 1) % 1000 == 0:
+                        torch.cuda.empty_cache()
                 
                 with torch.no_grad():
                     self.user_emb, self.item_emb = (emb.detach() for emb in self.model())
@@ -163,6 +171,7 @@ class BOD(GraphRecommender):
             print("start generator training...")
             for ol_iter in range(self.outer_loop):
                 loss = torch.tensor(0.0, device=self.device)
+                model.eval()
                 model_generator.train()
                 batch_ol = sample_batch_pairwise(self.data, ol_batch_size)
                 u_idx_ol, i_idx_ol, j_idx_ol = batch_ol
@@ -197,7 +206,12 @@ class BOD(GraphRecommender):
                 optimizer_generator.zero_grad(set_to_none=True)
                 loss.backward()
                 optimizer_generator.step()
-                print('epoch:', epoch_iter, 'outer_training_iter:', ol_iter, 'loss_real:', bpr_loss_ol.item(), 'loss_syn:', alignment_syn_ol.item())  
+                print('epoch:', epoch_iter, 'outer_training_iter:', ol_iter, 'loss_real:', bpr_loss_ol.item(), 'loss_syn:', alignment_syn_ol.item())
+                del u_idx_ol, i_idx_ol, j_idx_ol, user_emb_ol, item_emb_ol, pos_user_emb_ol, pos_item_emb_ol, neg_item_emb_ol
+                del A_weight_user_item_pos, A_weight_user_item_neg, A_weight_user_item
+                del rec_user_emb, rec_item_emb, bpr_loss_ol, alignment_syn_ol, gw_real, gw_syn, loss_reg, loss
+                if self.device.type == 'cuda':
+                    torch.cuda.empty_cache()
             model_generator.eval()
             if epoch_iter == self.maxEpoch - 1:            
                 break
