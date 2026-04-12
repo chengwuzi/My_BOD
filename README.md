@@ -24,17 +24,67 @@ The implementation is based on the open-source recommendation library [SelfRec](
 
 Please cite the following papers as the references if you use our codes.
 
-```bibtex
-@article{yu2022self,
-  title={Self-supervised learning for recommender systems: A survey},
-  author={Yu, Junliang and Yin, Hongzhi and Xia, Xin and Chen, Tong and Li, Jundong and Huang, Zi},
-  journal={arXiv preprint arXiv:2203.15876},
-  year={2022}
-}
 
-@inproceedings{wang2023efficient,
-  author = {Zongwei Wang, Min Gao, Wentao Li, Junliang Yu, Linxin Guo, Hongzhi Yin.},
-  title = {Efficient Bi-Level Optimization for Recommendation Denoising},
-  booktitle = {{KDD}},
-  year = {2023}
-}
+
+
+
+
+LightGCN首轮实验结果：
+
+
+
+Top 10
+Hit Ratio:0.03791370549661826
+Precision:0.03278290071803625
+Recall:0.03970707934454995
+NDCG:0.04516291892099532
+Top 20
+Hit Ratio:0.062066553369725684
+Precision:0.026833589995732602
+Recall:0.06488826699608541
+NDCG:0.055933278815941734
+Top 50
+Hit Ratio:0.113348439592131
+Precision:0.01960183312614802
+Recall:0.11744872918425435
+NDCG:0.07675686700180316
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

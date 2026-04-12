@@ -64,6 +64,7 @@ class BOD(GraphRecommender):
         self.weight_uniformity = float(args['-weight_uniformity'])
         self.outer_loop = int(args['-outer_loop'])
         self.inner_loop = int(args['-inner_loop'])
+        self.outer_batch_size = int(args['-outer_batch_size']) if args.contain('-outer_batch_size') else min(self.batch_size, 128)
         self.lightgcn_layers = 2
         if self.config.contain('LightGCN'):
             lightgcn_args = OptionConf(self.config['LightGCN'])
@@ -99,7 +100,7 @@ class BOD(GraphRecommender):
         model_generator = self.model_generator.to(self.device)
         optimizer_generator = torch.optim.Adam(model_generator.parameters(), lr=self.generator_lr)
 
-        ol_batch_size = self.batch_size
+        ol_batch_size = self.outer_batch_size
 
 
         for epoch_iter in range(self.maxEpoch):
@@ -148,14 +149,16 @@ class BOD(GraphRecommender):
                         print('epoch:', epoch_iter, 'inner_training_iter:', inner_iter, 'inner_batch：', n)
                         print('inner_batch_loss:', batch_loss_inner.item())
                 
-                with torch.no_grad():
-                    self.user_emb, self.item_emb = (emb.detach() for emb in self.model())
                 if epoch_iter % 5 == 0:
+                    with torch.no_grad():
+                        self.user_emb, self.item_emb = (emb.detach() for emb in self.model())
                     self.fast_evaluation(epoch_iter)
                     if self.device.type == 'cuda':
                         self.user_emb = self.user_emb.cpu()
                         self.item_emb = self.item_emb.cpu()
                         torch.cuda.empty_cache()
+                if self.device.type == 'cuda' and (epoch_iter + 1) % 2 == 0:
+                    torch.cuda.empty_cache()
             self.user_emb, self.item_emb = self.best_user_emb, self.best_item_emb
 
             print("start generator training...")
