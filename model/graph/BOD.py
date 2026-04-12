@@ -65,12 +65,17 @@ class BOD(GraphRecommender):
         self.weight_uniformity = float(args['-weight_uniformity'])
         self.outer_loop = int(args['-outer_loop'])
         self.inner_loop = int(args['-inner_loop'])
+        self.lightgcn_layers = 2
+        if self.config.contain('LightGCN'):
+            lightgcn_args = OptionConf(self.config['LightGCN'])
+            if lightgcn_args.contain('-n_layer'):
+                self.lightgcn_layers = int(lightgcn_args['-n_layer'])
         if self.trainmodel == "MF":
             self.model = Matrix_Factorization(self.data, self.emb_size)
         elif self.trainmodel == "NCF":
             self.model = NCFEncoder(self.data, 32, 3, [1,5,2,1])
         elif self.trainmodel == "LightGCN":
-            self.model = LGCN_Encoder(self.data, self.emb_size,2)
+            self.model = LGCN_Encoder(self.data, self.emb_size, self.lightgcn_layers)
         elif self.trainmodel == "NGCF":
             self.model = NGCF_Encoder(self.data, self.emb_size,2)
         elif self.trainmodel == "SimGCL":
