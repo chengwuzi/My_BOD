@@ -60,26 +60,14 @@ class GraphRecommender(Recommender):
         return rec_list
 
     def evaluate(self, rec_list):
-        self.recOutput.append('userId: recommendations in (itemId, ranking score) pairs, * means the item is hit.\n')
-        for user in self.data.test_set:
-            line = user + ':'
-            for item in rec_list[user]:
-                line += ' (' + item[0] + ',' + str(item[1]) + ')'
-                if item[0] in self.data.test_set[user]:
-                    line += '*'
-            line += '\n'
-            self.recOutput.append(line)
         current_time = strftime("%Y-%m-%d %H-%M-%S", localtime(time()))
-        # output prediction result
         out_dir = self.output['-dir']
-        file_name = self.config['model.name'] + '@' + current_time + '-top-' + str(self.max_N) + 'items' + '.txt'
-        FileIO.write_file(out_dir, file_name, self.recOutput)
-        print('The result has been output to ', abspath(out_dir), '.')
         file_name = self.config['model.name'] + '@' + current_time + '-performance' + '.txt'
         self.result = ranking_evaluation(self.data.test_set, rec_list, self.topN)
         self.model_log.add('###Evaluation Results###')
         self.model_log.add(self.result)
         FileIO.write_file(out_dir, file_name, self.result)
+        print('The performance result has been output to ', abspath(out_dir), '.')
         print('The result of %s:\n%s' % (self.model_name, ''.join(self.result)))
 
     def fast_evaluation(self, epoch):

@@ -1,6 +1,7 @@
 from data.data import Data
 from util.conf import OptionConf
 from util.logger import Log
+from util.seed import seed_everything
 from os.path import abspath
 from time import strftime, localtime, time
 
@@ -16,6 +17,9 @@ class Recommender(object):
         self.batch_size = int(self.config['batch_size'])
         self.lRate = float(self.config['learnRate'])
         self.reg = float(self.config['reg.lambda'])
+        self.seed = int(self.config['seed']) if self.config.contain('seed') else None
+        if self.seed is not None:
+            seed_everything(self.seed)
         self.output = OptionConf(self.config['output.setup'])
         current_time = strftime("%Y-%m-%d %H-%M-%S", localtime(time()))
         self.model_log = Log(self.model_name, self.model_name + ' ' + current_time)
@@ -36,6 +40,8 @@ class Recommender(object):
         print('Learning Rate:', self.lRate)
         print('Batch Size:', self.batch_size)
         print('Regularization Parameter: reg %.4f' % self.reg)
+        if self.seed is not None:
+            print('Random Seed:', self.seed)
         parStr = ''
         if self.config.contain(self.config['model.name']):
             args = OptionConf(self.config[self.config['model.name']])
