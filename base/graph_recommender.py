@@ -4,7 +4,7 @@ from util.algorithm import find_k_largest
 from time import strftime, localtime, time
 from data.loader import FileIO
 from os.path import abspath
-from util.evaluation import ranking_evaluation
+from util.evaluation import ranking_evaluation, format_ranking_evaluation
 import sys
 
 
@@ -12,7 +12,7 @@ class GraphRecommender(Recommender):
     def __init__(self, conf, training_set, test_set, **kwargs):
         super(GraphRecommender, self).__init__(conf, training_set, test_set, **kwargs)
         self.data = Interaction(conf, training_set, test_set)
-        self.bestPerformance = []
+        self.bestPerformance = None
         top = self.ranking['-topN'].split(',')
         self.topN = [int(num) for num in top]
         self.max_N = max(self.topN)
@@ -63,54 +63,46 @@ class GraphRecommender(Recommender):
         current_time = strftime("%Y-%m-%d %H-%M-%S", localtime(time()))
         out_dir = self.output['-dir']
         file_name = self.config['model.name'] + '@' + current_time + '-performance' + '.txt'
-        self.result = ranking_evaluation(self.data.test_set, rec_list, self.topN)
+        self.result = format_ranking_evaluation(ranking_evaluation(self.data.test_set, rec_list, self.topN))
         self.model_log.add('###Evaluation Results###')
-        self.model_log.add(self.result)
+        self.model_log.add(''.join(self.result))
         FileIO.write_file(out_dir, file_name, self.result)
         print('The performance result has been output to ', abspath(out_dir), '.')
         print('The result of %s:\n%s' % (self.model_name, ''.join(self.result)))
 
+    def _metric_sort_key(self, performance):
+        metric_key = []
+        for top_n in sorted(performance.keys(), reverse=True):
+            metric_key.append(performance[top_n]['NDCG'])
+            metric_key.append(performance[top_n]['Recall'])
+        return tuple(metric_key)
+
+    def _format_performance_summary(self, performance):
+        summary = []
+        for top_n in sorted(performance.keys()):
+            summary.append('Recall@' + str(top_n) + ':' + str(performance[top_n]['Recall']))
+            summary.append('NDCG@' + str(top_n) + ':' + str(performance[top_n]['NDCG']))
+        return ' | '.join(summary)
+
     def fast_evaluation(self, epoch):
         print('evaluating the model...')
         rec_list = self.test()
-        measure = ranking_evaluation(self.data.test_set, rec_list, [self.max_N])
-        if len(self.bestPerformance) > 0:
-            count = 0
-            performance = {}
-            for m in measure[1:]:
-                k, v = m.strip().split(':')
-                performance[k] = float(v)
-            for k in self.bestPerformance[1]:
-                if self.bestPerformance[1][k] > performance[k]:
-                    count += 1
-                else:
-                    count -= 1
-            if count < 0:
-                self.bestPerformance[1] = performance
-                self.bestPerformance[0] = epoch + 1
-                self.save()
-        else:
-            self.bestPerformance.append(epoch + 1)
-            performance = {}
-            for m in measure[1:]:
-                k, v = m.strip().split(':')
-                performance[k] = float(v)
-                self.bestPerformance.append(performance)
+        performance = ranking_evaluation(self.data.test_set, rec_list, self.topN)
+        current_key = self._metric_sort_key(performance)
+        is_new_best = self.bestPerformance is None or current_key > self._metric_sort_key(self.bestPerformance['metrics'])
+        if is_new_best:
+            self.bestPerformance = {
+                'epoch': epoch + 1,
+                'metrics': performance,
+            }
             self.save()
         print('-' * 120)
-        print('Quick Ranking Performance ' + ' (Top-' + str(self.max_N) + ' Item Recommendation)')
-        measure = [m.strip() for m in measure[1:]]
+        print('Quick Ranking Performance')
         print('*Current Performance*')
-        print('Epoch:', str(epoch + 1) + ',', ' | '.join(measure))
-        bp = ''
-        # for k in self.bestPerformance[1]:
-        #     bp+=k+':'+str(self.bestPerformance[1][k])+' | '
-        bp += 'Hit Ratio' + ':' + str(self.bestPerformance[1]['Hit Ratio']) + ' | '
-        bp += 'Precision' + ':' + str(self.bestPerformance[1]['Precision']) + ' | '
-        bp += 'Recall' + ':' + str(self.bestPerformance[1]['Recall']) + ' | '
-        # bp += 'F1' + ':' + str(self.bestPerformance[1]['F1']) + ' | '
-        bp += 'MDCG' + ':' + str(self.bestPerformance[1]['NDCG'])
+        print('Epoch:', str(epoch + 1) + ',', self._format_performance_summary(performance))
+        if is_new_best:
+            print('Best Epoch Updated:', str(epoch + 1))
         print('*Best Performance* ')
-        print('Epoch:', str(self.bestPerformance[0]) + ',', bp)
+        print('Epoch:', str(self.bestPerformance['epoch']) + ',', self._format_performance_summary(self.bestPerformance['metrics']))
         print('-' * 120)
-        return measure
+        return performance

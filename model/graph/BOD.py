@@ -149,14 +149,13 @@ class BOD(GraphRecommender):
                         print('epoch:', epoch_iter, 'inner_training_iter:', inner_iter, 'inner_batch：', n)
                         print('inner_batch_loss:', batch_loss_inner.item())
                 
-                if epoch_iter % 5 == 0:
-                    with torch.no_grad():
-                        self.user_emb, self.item_emb = (emb.detach() for emb in self.model())
-                    self.fast_evaluation(epoch_iter)
-                    if self.device.type == 'cuda':
-                        self.user_emb = self.user_emb.cpu()
-                        self.item_emb = self.item_emb.cpu()
-                        torch.cuda.empty_cache()
+                with torch.no_grad():
+                    self.user_emb, self.item_emb = (emb.detach() for emb in self.model())
+                self.fast_evaluation(epoch_iter)
+                if self.device.type == 'cuda':
+                    self.user_emb = self.user_emb.cpu()
+                    self.item_emb = self.item_emb.cpu()
+                    torch.cuda.empty_cache()
                 if self.device.type == 'cuda' and (epoch_iter + 1) % 2 == 0:
                     torch.cuda.empty_cache()
             self.user_emb, self.item_emb = self.best_user_emb, self.best_item_emb
