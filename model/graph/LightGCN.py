@@ -39,12 +39,15 @@ class LightGCN(GraphRecommender):
                 optimizer.step()
                 if n % 100 == 0:
                     print('training:', epoch + 1, 'batch', n, 'batch_loss:', batch_loss.item())
+                del user_idx, pos_idx, neg_idx, user_emb, pos_item_emb, neg_item_emb, rec_user_emb, rec_item_emb, batch_loss
+                if self.device.type == 'cuda' and (n + 1) % 1000 == 0:
+                    torch.cuda.empty_cache()
             model.eval()
-            with torch.no_grad():
-                self.user_emb, self.item_emb = (emb.detach() for emb in model())
             end_time = time.time()
             print("One epoch Running time: %f s" % (end_time - start_time))
             if epoch % 5 == 0:
+                with torch.no_grad():
+                    self.user_emb, self.item_emb = (emb.detach() for emb in model())
                 self.fast_evaluation(epoch)
                 if self.device.type == 'cuda':
                     self.user_emb = self.user_emb.cpu()
