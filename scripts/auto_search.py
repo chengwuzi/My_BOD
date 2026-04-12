@@ -22,6 +22,7 @@ EXAMPLE_SPEC = {
     "base_config": "conf/BOD.conf",
     "output_dir": "results/search_runs/bod_stage1",
     "resume": True,
+    "max_attempts": 3,
     "timeout_sec": None,
     "fixed_overrides": {
         "num.max.epoch": 20,
@@ -328,7 +329,14 @@ def rebuild_summary_csv(summary_jsonl: Path, summary_csv: Path) -> None:
             )
 
 
-def run_trial_subprocess(config_path: Path, result_json: Path, log_path: Path, timeout_sec: int | None) -> tuple[int | None, dict[str, Any]]:
+def run_trial_subprocess(
+    config_path: Path,
+    result_json: Path,
+    log_path: Path,
+    timeout_sec: int | None,
+    attempt_index: int = 1,
+    max_attempts: int = 1,
+) -> tuple[int | None, dict[str, Any]]:
     command = [
         sys.executable,
         str(Path(__file__).resolve()),
@@ -339,8 +347,20 @@ def run_trial_subprocess(config_path: Path, result_json: Path, log_path: Path, t
         str(result_json),
     ]
     log_path.parent.mkdir(parents=True, exist_ok=True)
+    if result_json.exists():
+        result_json.unlink()
     start_time = time.time()
-    with log_path.open("w", encoding="utf-8") as log_file:
+    log_mode = "w" if attempt_index == 1 else "a"
+    with log_path.open(log_mode, encoding="utf-8") as log_file:
+        banner = (
+            f"\n{'=' * 80}\n"
+            f"Attempt {attempt_index}/{max_attempts}\n"
+            f"Started: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(start_time))}\n"
+            f"Config: {config_path}\n"
+            f"{'=' * 80}\n"
+        )
+        log_file.write(banner)
+        log_file.flush()
         try:
             completed = subprocess.run(
                 command,
@@ -361,6 +381,7 @@ def run_trial_subprocess(config_path: Path, result_json: Path, log_path: Path, t
                 "duration_sec": round(duration_sec, 3),
                 "error_type": "TimeoutExpired",
                 "error": str(exc),
+                "attempt": attempt_index,
             }
             dump_json(result_json, timeout_record)
             return returncode, timeout_record
@@ -379,6 +400,7 @@ def run_trial_subprocess(config_path: Path, result_json: Path, log_path: Path, t
 
     result_record["returncode"] = returncode
     result_record["duration_sec"] = round(duration_sec, 3)
+    result_record["attempt"] = attempt_index
     dump_json(result_json, result_record)
     return returncode, result_record
 
@@ -442,6 +464,9 @@ def run_search(spec_path: Path, dry_run: bool) -> int:
     trial_results_dir = output_dir / "trial_results"
     timeout_sec = spec.get("timeout_sec")
     resume = bool(spec.get("resume", True))
+    max_attempts = int(spec.get("max_attempts", 3))
+    if max_attempts < 1:
+        raise ValueError("'max_attempts' must be at least 1.")
 
     base_config = read_conf_file(base_config_path)
     trials = build_trials(spec)
@@ -454,6 +479,7 @@ def run_search(spec_path: Path, dry_run: bool) -> int:
     print(f"Output Dir: {output_dir}")
     print(f"Trials Planned: {len(trials)}")
     print(f"Resume Mode: {resume}")
+    print(f"Max Attempts Per Trial: {max_attempts}")
     print(f"Dry Run: {dry_run}")
     print("-" * 80)
 
@@ -486,7 +512,39 @@ def run_search(spec_path: Path, dry_run: bool) -> int:
             print("  dry-run: config generated, training not launched")
             continue
 
-        returncode, trial_result = run_trial_subprocess(config_path, result_json, log_path, timeout_sec)
+        attempt_records: list[dict[str, Any]] = []
+        returncode: int | None = None
+        trial_result: dict[str, Any] = {}
+        for attempt_index in range(1, max_attempts + 1):
+            print(f"  attempt {attempt_index}/{max_attempts}")
+            returncode, trial_result = run_trial_subprocess(
+                config_path,
+                result_json,
+                log_path,
+                timeout_sec,
+                attempt_index=attempt_index,
+                max_attempts=max_attempts,
+            )
+            attempt_records.append(
+                {
+                    "attempt": attempt_index,
+                    "status": trial_result.get("status", "failed"),
+                    "returncode": returncode,
+                    "duration_sec": trial_result.get("duration_sec"),
+                    "error_type": trial_result.get("error_type"),
+                    "error": trial_result.get("error"),
+                }
+            )
+            if trial_result.get("status") != "failed":
+                break
+            if attempt_index < max_attempts:
+                print(
+                    "  failed attempt "
+                    f"{attempt_index}/{max_attempts}: "
+                    f"{trial_result.get('error_type')} {trial_result.get('error')}"
+                )
+                print("  retrying...")
+
         record = {
             "search_name": search_name,
             "trial_id": trial_id,
@@ -504,6 +562,8 @@ def run_search(spec_path: Path, dry_run: bool) -> int:
             "error_type": trial_result.get("error_type"),
             "error": trial_result.get("error"),
             "overrides": overrides,
+            "attempt_count": len(attempt_records),
+            "attempts": attempt_records,
         }
         append_jsonl(summary_jsonl, record)
         completed_signatures.add(signature)
@@ -513,9 +573,18 @@ def run_search(spec_path: Path, dry_run: bool) -> int:
             metrics = record["metrics"]
             recall20 = metrics.get("20", {}).get("Recall")
             ndcg20 = metrics.get("20", {}).get("NDCG")
-            print(f"  success: best_epoch={record['best_epoch']} recall@20={recall20} ndcg@20={ndcg20}")
+            print(
+                "  success: "
+                f"attempts={record['attempt_count']} "
+                f"best_epoch={record['best_epoch']} "
+                f"recall@20={recall20} ndcg@20={ndcg20}"
+            )
         else:
-            print(f"  {record['status']}: {record.get('error_type')} {record.get('error')}")
+            print(
+                f"  {record['status']}: "
+                f"attempts={record['attempt_count']} "
+                f"{record.get('error_type')} {record.get('error')}"
+            )
 
     if not dry_run:
         rebuild_summary_csv(summary_jsonl, summary_csv)
@@ -541,4 +610,5 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
 
