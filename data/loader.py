@@ -11,7 +11,8 @@ class FileIO(object):
     def write_file(dir, file, content, op='w'):
         if not os.path.exists(dir):
             os.makedirs(dir)
-        with open(dir + file, op) as f:
+        file_path = os.path.join(dir, file)
+        with open(file_path, op) as f:
             f.writelines(content)
 
     @staticmethod

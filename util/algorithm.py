@@ -1,6 +1,12 @@
 from numpy.linalg import norm
 from math import sqrt, exp
-from numba import jit
+try:
+    from numba import jit
+except ModuleNotFoundError:
+    def jit(*args, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
 
 
 def l1(x):

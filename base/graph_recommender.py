@@ -62,7 +62,13 @@ class GraphRecommender(Recommender):
     def evaluate(self, rec_list):
         current_time = strftime("%Y-%m-%d %H-%M-%S", localtime(time()))
         out_dir = self.output['-dir']
-        self.result = format_ranking_evaluation(ranking_evaluation(self.data.test_set, rec_list, self.topN))
+        final_performance = ranking_evaluation(self.data.test_set, rec_list, self.topN)
+        if self.bestPerformance is None:
+            self.bestPerformance = {
+                'epoch': self.maxEpoch,
+                'metrics': final_performance,
+            }
+        self.result = format_ranking_evaluation(final_performance)
         self.model_log.add('###Evaluation Results###')
         self.model_log.add(''.join(self.result))
         summary_file = 'experiment_results.txt'
