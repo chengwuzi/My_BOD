@@ -24,35 +24,47 @@ class LightGCN(GraphRecommender):
             start_time = time.time()
             for n, batch in enumerate(next_batch_pairwise(self.data, self.batch_size)):
                 user_idx, pos_idx, neg_idx = batch
+                user_idx = torch.as_tensor(user_idx, device=self.device, dtype=torch.long)
+                pos_idx = torch.as_tensor(pos_idx, device=self.device, dtype=torch.long)
+                neg_idx = torch.as_tensor(neg_idx, device=self.device, dtype=torch.long)
                 model.train()
                 rec_user_emb, rec_item_emb = model()
-                user_emb, pos_item_emb, neg_item_emb = rec_user_emb[user_idx], rec_item_emb[pos_idx], rec_item_emb[neg_idx]
+                user_emb = rec_user_emb.index_select(0, user_idx)
+                pos_item_emb = rec_item_emb.index_select(0, pos_idx)
+                neg_item_emb = rec_item_emb.index_select(0, neg_idx)
                 batch_loss = bpr_loss(user_emb, pos_item_emb, neg_item_emb) + l2_reg_loss(self.reg, user_emb,pos_item_emb)
                 # Backward and optimize
-                optimizer.zero_grad()
+                optimizer.zero_grad(set_to_none=True)
                 batch_loss.backward()
                 optimizer.step()
                 if n % 100 == 0:
                     print('training:', epoch + 1, 'batch', n, 'batch_loss:', batch_loss.item())
             model.eval()
             with torch.no_grad():
-                self.user_emb, self.item_emb = model()
+                self.user_emb, self.item_emb = (emb.detach() for emb in model())
             end_time = time.time()
             print("One epoch Running time: %f s" % (end_time - start_time))
             if epoch % 5 == 0:
                 self.fast_evaluation(epoch)
+                if self.device.type == 'cuda':
+                    self.user_emb = self.user_emb.cpu()
+                    self.item_emb = self.item_emb.cpu()
+                    torch.cuda.empty_cache()
         self.user_emb, self.item_emb = self.best_user_emb, self.best_item_emb
 
 
 
     def save(self):
         with torch.no_grad():
-            self.best_user_emb, self.best_item_emb = self.model.forward()
+            best_user_emb, best_item_emb = self.model.forward()
+            self.best_user_emb = best_user_emb.detach().cpu()
+            self.best_item_emb = best_item_emb.detach().cpu()
 
     def predict(self, u):
-        u = self.data.get_user_id(u)
-        score = torch.matmul(self.user_emb[u], self.item_emb.transpose(0, 1))
-        return score.cpu().numpy()
+        with torch.no_grad():
+            u = self.data.get_user_id(u)
+            score = torch.matmul(self.user_emb[u], self.item_emb.transpose(0, 1))
+            return score.detach().cpu().numpy()
 
 
 class LGCN_Encoder(nn.Module):
