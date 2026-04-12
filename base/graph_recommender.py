@@ -62,13 +62,29 @@ class GraphRecommender(Recommender):
     def evaluate(self, rec_list):
         current_time = strftime("%Y-%m-%d %H-%M-%S", localtime(time()))
         out_dir = self.output['-dir']
-        file_name = self.config['model.name'] + '@' + current_time + '-performance' + '.txt'
         self.result = format_ranking_evaluation(ranking_evaluation(self.data.test_set, rec_list, self.topN))
         self.model_log.add('###Evaluation Results###')
         self.model_log.add(''.join(self.result))
-        FileIO.write_file(out_dir, file_name, self.result)
-        print('The performance result has been output to ', abspath(out_dir), '.')
+        summary_file = 'experiment_results.txt'
+        FileIO.write_file(out_dir, summary_file, self._build_experiment_record(current_time), op='a')
+        print('The experiment summary has been appended to ', abspath(out_dir), '.')
         print('The result of %s:\n%s' % (self.model_name, ''.join(self.result)))
+
+    def _build_experiment_record(self, current_time):
+        record = []
+        record.append('=' * 120 + '\n')
+        record.append('Time: ' + current_time + '\n')
+        record.append('Model: ' + self.model_name + '\n')
+        record.append('Dataset: ' + self.config['dataset.name'] + '\n')
+        record.append('Training Set: ' + abspath(self.config['training.set']) + '\n')
+        record.append('Test Set: ' + abspath(self.config['test.set']) + '\n')
+        record.append('Best Epoch: ' + str(self.bestPerformance['epoch']) + '\n')
+        record.append('Best Metrics: ' + self._format_performance_summary(self.bestPerformance['metrics']) + '\n')
+        record.append('Configuration:\n')
+        for key in sorted(self.config.config.keys()):
+            record.append(key + '=' + self.config[key] + '\n')
+        record.append('\n')
+        return record
 
     def _metric_sort_key(self, performance):
         metric_key = []
