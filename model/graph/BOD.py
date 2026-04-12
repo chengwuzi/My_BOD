@@ -82,7 +82,10 @@ class BOD(GraphRecommender):
         self.model_generator = GraphGenerator_VAE(self.data, self.generator_emb_size)
 
     def train(self):
-        torch.autograd.set_detect_anomaly(True)
+        # Sparse graph propagation plus higher-order gradients is already memory-heavy.
+        # Keeping anomaly mode enabled in normal training makes CUDA sparse backward much
+        # more fragile and is only useful while debugging.
+        torch.autograd.set_detect_anomaly(False)
         model = self.model.cuda()
         model_parameters = list(model.parameters())
         optimizer = torch.optim.Adam(model.parameters(), lr=self.lRate)
@@ -128,7 +131,7 @@ class BOD(GraphRecommender):
                     batch_loss_inner = self.weight_bpr * bpr_inner + self.weight_alignment * alignment_inner + self.weight_uniformity * uniformity_inner + cl_loss
                     optimizer_generator.zero_grad()
                     optimizer.zero_grad()
-                    batch_loss_inner.backward(retain_graph=True)
+                    batch_loss_inner.backward()
                     optimizer.step()
                     if n % 1000 == 0:
                         print('epoch:', epoch_iter, 'inner_training_iter:', inner_iter, 'inner_batch：', n)
@@ -162,7 +165,7 @@ class BOD(GraphRecommender):
                 A_weight_user_item = model_generator(user_emb_ol, item_emb_ol)                
                 alignment_syn_ol = alignment_loss_weight_1(user_emb_ol, item_emb_ol, A_weight_user_item)
 
-                gw_syn = torch.autograd.grad(alignment_syn_ol, model_parameters, retain_graph=True, create_graph=True)
+                gw_syn = torch.autograd.grad(alignment_syn_ol, model_parameters, create_graph=True)
                 loss = match_loss(gw_real, gw_syn, 'ours')
 
                 loss_reg = l2_reg_loss(self.generator_reg, user_emb_ol, item_emb_ol)
