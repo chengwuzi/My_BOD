@@ -1,540 +1,539 @@
-# 调参与自动化搜索说明
+# README_tuning
 
-这份文档记录当前项目后续调参的统一思路，主要面向两个模型：
+## 1. 这份文档的用途
 
-- `BOD`
-- `LightGCN`
+这份文档是当前项目调参与研究工作的正式交接文档。
 
-当前约定如下：
+后续如果开启新对话，新的助手应当先完整读完这份文档，再继续推进工作。
+这里记录的不是泛泛而谈的“调参建议”，而是本项目当前已经做过的工作、已经确认的判断、已经踩过的坑、已经改过的脚本，以及下一步最合理的推进路线。
 
-- 只关注数据集 `iFashion_UB`
-- 调参优先级：先 `BOD`，后 `LightGCN`
-- 主评估指标：`NDCG@20`
-- 辅助指标：`Recall@20`、`NDCG@10`
-- `Recall@10` 只作为补充参考
+## 2. 研究边界与硬约束
 
+当前只关注以下范围，不要发散：
 
-## 1. 为什么先调 BOD
+- 模型只关注 `BOD` 和 `LightGCN`
+- 数据集只关注 `iFashion_UB`
+- `iFashion_UB` 是从捆绑推荐论文 `MultiCBR` 的 `iFashion` 数据中抽出的 `u-b` 交互
+- 当前研究目标不是做大而全复现，而是验证 `BOD` 的 generator 是否能学到 `user-bundle` 交互权重
+- 希望把 `BOD` 和 `LightGCN` 都调到各自较优状态，并且让 `BOD` 明显超过 `LightGCN`
+- 如果 `BOD` 能稳定明显优于 `LightGCN`，才更有把握说明 generator 学到的交互权重具有后续迁移到 `MultiCBR` 的价值
 
-当前项目的研究目标不是“把所有模型都调一遍”，而是尽快回答下面两个问题：
+本地开发环境约束：
+ 
+- 当前本地电脑没有可用显卡，也没有完整训练环境
+- 在本地不要主动运行训练
+- 只在本地改代码、查代码、写脚本、整理文档
+- 用户会把代码同步到服务器后再执行训练
 
-1. `BOD` 在 `iFashion_UB` 上能否稳定带来增益
-2. 如果能，它的增益主要来自哪里
+## 3. 当前项目里最相关的文件
 
-之所以先调 `BOD`，原因有三点：
+后续讨论和改动应优先围绕这些文件：
 
-- `LightGCN` 已经能在 `iFashion_UB` 上正常收敛，可以作为可用 baseline
-- `BOD` 的内层本质上还是 `LightGCN`，先调 `BOD`，实际上已经顺带探索了一部分 backbone 的有效区间
-- `iFashion_UB` 是 `user-bundle` 数据，不是标准 `user-item` 交互，论文里的涨幅不一定原样复现，因此更需要优先验证 `BOD` 自身机制
+- `conf/BOD.conf`
+- `conf/LightGCN.conf`
+- `model/graph/BOD.py`
+- `model/graph/LightGCN.py`
+- `scripts/auto_search.py`
+- `scripts/search_specs/*.json`
+- `results/experiment_results.txt`
+- 本文档 `README_tuning.md`
 
+## 4. 当前研究目标的准确表述
 
-## 2. 当前对数据和指标的判断
+当前要回答的问题不是“BOD 能不能跑”，而是：
 
-### 2.1 数据特点
+1. 在 `iFashion_UB` 上，`LightGCN` 的强 baseline 能做到什么水平
+2. 在同一数据集上，`BOD` 能否稳定超过 `LightGCN`
+3. `BOD` 的提升是否主要来自 generator 对 `u-b` 交互权重的学习
+4. 如果是，这些 learned weights 是否可以进一步服务于 `MultiCBR`
 
-`iFashion_UB` 与原始 `iFashion` 不同，主要差异是：
+换句话说，当前研究工作分两层：
 
-- 图更密
-- 用户平均交互更多
-- 测试集中每个用户的正样本更多
-- `Top-50` 很容易让 `Recall` 接近饱和
+- 表层目标：把指标做上去
+- 深层目标：把指标提升和 generator 的“权重识别能力”联系起来
 
-所以当前我们已经统一成只看：
+## 5. 已经建立的关键理解
 
-- `Top-10`
-- `Top-20`
+### 5.1 BOD 的训练结构
 
-并且只保留：
+`BOD` 不是单层训练，而是双层：
 
-- `Recall`
-- `NDCG`
+- 内层：训练推荐器 backbone，这里当前使用 `LightGCN`
+- 外层：训练 generator，让它为交互对输出权重，并通过梯度匹配去影响内层训练方向
 
+相关代码位置：
 
-### 2.2 为什么主看 NDCG@20
+- `model/graph/BOD.py`
 
-`Recall` 更适合观察“有没有召回到”，但不够敏感，特别是在 `Top-K` 比较大、测试集正样本偏多时容易饱和。
-
-`NDCG@20` 更适合做主指标，因为它同时考虑：
-
-- 是否命中
-- 命中的位置是否靠前
-
-对 `BOD` 来说，这一点尤其重要。因为 `BOD` 不只是“多捞一点候选”，理论上更应该改善排序质量。
-
-
-## 3. 调参总原则
-
-### 3.1 先分层，不要一次全扫
-
-参数要分两层看：
-
-1. `GCN / backbone` 层
-2. `BOD` 层
-
-但执行顺序上，优先调 `BOD` 层，再回过头微调 `GCN` 层。
-
-
-### 3.2 先粗搜，再细搜
-
-建议总共分三步：
-
-1. 先做 `BOD` 参数粗搜，找出有效区间
-2. 在有效区间内细搜 `BOD`
-3. 最后再补调 `LightGCN`，形成公平对比
-
-
-### 3.3 不建议一开始就全量网格搜索
-
-原因很现实：
-
-- `BOD` 训练成本高
-- GPU 稳定性历史上不是完全无风险
-- 很多参数之间有强耦合
-
-如果一开始就把所有参数都网格化，实验量会爆炸，而且很难读出结论。
-
-
-## 4. BOD 调参计划
-
-### 4.1 参数分层
-
-#### 第一层：先固定住的参数
-
-这部分先不要大动：
-
-- `embbedding.size`
-- `LightGCN.-n_layer`
-
-当前建议先固定为：
-
-- `embbedding.size = 64`
-- `LightGCN.-n_layer = 1`
-
-
-#### 第二层：优先调的 BOD 参数
-
-这是最值得先扫的一层：
+### 5.2 当前 BOD 最核心的几个参数
 
 - `GM_AU.-weight_uniformity`
-- `GM_AU.-generator_lr`
-- `GM_AU.-generator_reg`
-- `GM_AU.-outer_batch_size`
-- `GM_AU.-weight_alignment`
+  - 控制内层 `uniformity_loss` 的权重
+  - 当前已被证明是强影响参数
+
 - `GM_AU.-weight_bpr`
+  - 控制加权 BPR 项的权重
 
+- `GM_AU.-weight_alignment`
+  - 控制加权 alignment 项的权重
 
-#### 第三层：桥接参数
+- `GM_AU.-generator_lr`
+  - generator 优化器学习率
 
-这些参数虽然不完全属于 `BOD` 本身，但会明显影响训练动态：
+- `GM_AU.-generator_reg`
+  - 名字叫 generator regularization，但当前实现里并不是直接对 generator 参数做正则
+  - 代码实际上是对 outer-loop 中的 `user_emb_ol` / `item_emb_ol` 做 `l2_reg_loss`
 
-- `learnRate`
-- `batch_size`
-- `num.max.epoch`
+- `GM_AU.-outer_batch_size`
+  - generator 外层更新时使用的 batch 大小
 
+- `GM_AU.-outer_loop`
+- `GM_AU.-inner_loop`
+  - 控制每个 epoch 内层和外层的更新次数
 
-### 4.2 推荐的搜索顺序
+### 5.3 一个非常重要的实现事实
 
-#### 阶段一：先扫 uniformity
+当前代码里：
 
-优先级最高。
+- `generator_lr` 确实直接作用于 `optimizer_generator`
+- `generator_reg` 当前并没有真正正则到 generator 参数本身
 
-推荐值：
+对应代码：
 
-- `0`
-- `0.02`
-- `0.05`
-- `0.1`
-- `0.2`
+- `model/graph/BOD.py`
+  - `optimizer_generator = torch.optim.Adam(model_generator.parameters(), lr=self.generator_lr)`
+  - `loss_reg = l2_reg_loss(self.generator_reg, user_emb_ol, item_emb_ol)`
+
+- `util/loss_torch.py`
+  - `l2_reg_loss(reg, *args)` 只是对传入 embedding 做 L2
+
+这个事实对解释当前搜参结果非常重要。
+
+## 6. 自动化脚本线已经做过的修改
+
+### 6.1 `scripts/auto_search.py` 已经做过的关键修改
+
+这部分是已经完成并在服务器上实际使用过的，不要丢。
+
+#### 修改 1：加入项目根目录到 `sys.path`
 
 原因：
 
-- `iFashion_UB` 更密
-- `uniformity` 不一定越大越好
-- 很有可能较小的 `uniformity` 会更合适
+- 服务器上用 `python scripts/auto_search.py ...` 运行时，子进程一开始报过：
+  - `ModuleNotFoundError: No module named 'SELFRec'`
 
+解决：
 
-#### 阶段二：再扫 generator 学习强度
+- 在 `scripts/auto_search.py` 开头加入 repo root 注入
+- 让脚本模式下也能正常导入 `SELFRec`
 
-推荐先调：
+#### 修改 2：失败自动重试
 
-- `GM_AU.-generator_lr`
-- `GM_AU.-generator_reg`
+需求来源：
 
-建议区间：
+- 用户希望训练出错时不要立刻跳过，而是先重试
+- 连续 3 次失败才跳到下一个 trial
 
-- `generator_lr`: `1e-4`, `5e-4`, `1e-3`
-- `generator_reg`: `1e-5`, `1e-4`, `5e-4`
+当前行为：
 
+- 单个 trial 失败时自动重试
+- 默认最多 3 次
+- 连续 3 次失败才记为失败
+- 当前重试逻辑主要针对 trial 返回的 `failed`
+- `timeout` 目前没有特殊重试策略
 
-#### 阶段三：再调外层 batch 和损失权重
+#### 修改 3：记录 attempt 信息
 
-推荐参数：
+当前 `summary.jsonl` 中会记录：
 
-- `GM_AU.-outer_batch_size`
-- `GM_AU.-weight_alignment`
-- `GM_AU.-weight_bpr`
+- `attempt_count`
+- `attempts`
 
-建议区间：
+方便回看哪些 trial 是重试后才成功的。
 
-- `outer_batch_size`: `64`, `128`, `256`
-- `weight_alignment`: `0.5`, `1`, `2`
-- `weight_bpr`: `0.5`, `1`, `2`
+### 6.2 为什么必须保留子进程隔离
 
+因为训练过程中实际出现过：
 
-#### 阶段四：最后微调 backbone 训练强度
+- `RuntimeError CUDA error: an illegal memory access was encountered`
 
-只有前面 `BOD` 层面已经有明确增益时，才建议进入这一步。
+这类 CUDA 错误一旦出现，同一 Python 进程中的 CUDA 上下文可能已经不干净。
+所以 trial 级子进程隔离是有必要的，不建议改回同进程串行执行。
 
-建议范围：
+## 7. 当前配置基线
 
-- `learnRate`: `5e-4`, `1e-3`, `2e-3`
-- `batch_size`: `128`, `256`
+### 7.1 当前 `conf/BOD.conf`
 
+当前本地配置文件已更新为：
 
-### 4.3 一个高性价比的 BOD 起始搜索空间
+- `dataset.name=iFashion_UB`
+- `model.name=BOD`
+- `trainmodel=LightGCN`
+- `seed=3407`
+- `embbedding.size=64`
+- `num.max.epoch=30`
+- `batch_size=256`
+- `learnRate=0.001`
+- `reg.lambda=0.0001`
+- `LightGCN=-n_layer 1`
+- `GM_AU=-generator_lr 0.0005 -generator_reg 0.0001 -generator_emb_size 64 -outer_loop 1 -inner_loop 1 -outer_batch_size 128 -weight_bpr 1 -weight_alignment 1 -weight_uniformity 0.35`
 
-第一轮推荐只跑这些：
+重点：
 
-- 固定：
-  - `LightGCN.-n_layer = 1`
-  - `embbedding.size = 64`
-  - `batch_size = 256`
-  - `learnRate = 0.001`
-  - `GM_AU.-outer_loop = 1`
-  - `GM_AU.-inner_loop = 1`
+- `weight_uniformity` 已经被正式定到 `0.35`
+- `num.max.epoch` 已更新到 `30`
 
-- 先扫：
-  - `GM_AU.-weight_uniformity = [0, 0.02, 0.05, 0.1]`
+### 7.2 当前阶段默认固定住的参数
 
-- 然后扫：
-  - `GM_AU.-generator_lr = [1e-4, 5e-4, 1e-3]`
-  - `GM_AU.-generator_reg = [1e-5, 1e-4]`
+除非进入专门的新一轮搜索，否则当前默认固定：
 
-- 再扫：
-  - `GM_AU.-outer_batch_size = [64, 128, 256]`
-  - `GM_AU.-weight_alignment = [0.5, 1, 2]`
-  - `GM_AU.-weight_bpr = [0.5, 1, 2]`
+- `embbedding.size = 64`
+- `LightGCN.-n_layer = 1`
+- `num.max.epoch = 30`
+- `batch_size = 256`
+- `learnRate = 0.001`
+- `GM_AU.-outer_loop = 1`
+- `GM_AU.-inner_loop = 1`
+- `GM_AU.-outer_batch_size = 128`
+- `GM_AU.-weight_bpr = 1`
+- `GM_AU.-weight_alignment = 1`
+- `GM_AU.-weight_uniformity = 0.35`
 
+## 8. 已完成的搜索阶段与结果
 
-## 5. LightGCN 调参计划
+下面的结果是当前调参工作的核心历史。
 
-`LightGCN` 放在 `BOD` 后面调，主要目标是拿到更强的 baseline，用于和最优 `BOD` 做公平比较。
+### 8.1 Stage 1：扫描 `weight_uniformity = [0.0, 0.02, 0.05, 0.1]`
 
-推荐优先级：
+spec：
+
+- `scripts/search_specs/bod_stage1_uniformity.json`
+
+固定参数：
+
+- `num.max.epoch = 20`
+- `batch_size = 256`
+- `learnRate = 0.001`
+- `LightGCN.-n_layer = 1`
+- `GM_AU.-outer_loop = 1`
+- `GM_AU.-inner_loop = 1`
+
+结果：
+
+- `0.0`
+  - `best_epoch = 17`
+  - `Recall@20 = 0.0284423820`
+  - `NDCG@20 = 0.0241358068`
+  - 第一次因为 CUDA illegal memory access 失败，第二次重试成功
+
+- `0.02`
+  - `best_epoch = 17`
+  - `Recall@20 = 0.0299849264`
+  - `NDCG@20 = 0.0253468514`
+
+- `0.05`
+  - `best_epoch = 17`
+  - `Recall@20 = 0.0360243853`
+  - `NDCG@20 = 0.0307521621`
+
+- `0.1`
+  - `best_epoch = 20`
+  - `Recall@20 = 0.0535159505`
+  - `NDCG@20 = 0.0444552353`
+
+结论：
+
+- `weight_uniformity` 不是越小越好
+- 至少在 `iFashion_UB` 上，`uniformity` 增大明显带来收益
+
+### 8.2 Stage 2：继续向右扫描 `weight_uniformity = [0.1, 0.15, 0.2, 0.25]`
+
+spec：
+
+- `scripts/search_specs/bod_stage2_uniformity_right.json`
+
+结果：
+
+- `0.1`
+  - `Recall@20 = 0.0535159505`
+  - `NDCG@20 = 0.0444552354`
+  - 重试一次后成功
+
+- `0.15`
+  - `Recall@20 = 0.0751615597`
+  - `NDCG@20 = 0.0631558120`
+
+- `0.2`
+  - `Recall@20 = 0.0923676503`
+  - `NDCG@20 = 0.0797284353`
+
+- `0.25`
+  - `Recall@20 = 0.0972465551`
+  - `NDCG@20 = 0.0846317695`
+
+结论：
+
+- `weight_uniformity` 继续增大仍然持续显著变好
+- 最优值尚未到头
+
+### 8.3 Stage 3：`num.max.epoch = 30`，扫描 `weight_uniformity = [0.25, 0.3, 0.35, 0.4]`
+
+spec：
+
+- `scripts/search_specs/bod_stage3_uniformity_right.json`
+
+结果：
+
+- `0.25`
+  - `best_epoch = 30`
+  - `Recall@20 = 0.0987868349`
+  - `NDCG@20 = 0.0863496586`
+
+- `0.3`
+  - `best_epoch = 27`
+  - `Recall@20 = 0.0996268059`
+  - `NDCG@20 = 0.0872392076`
+
+- `0.35`
+  - `best_epoch = 26`
+  - `Recall@20 = 0.0998831146`
+  - `NDCG@20 = 0.0874434840`
+
+- `0.4`
+  - 第一次报 `CUDA illegal memory access`
+  - 第二次开始重跑时，用户决定不再继续等待
+
+结论：
+
+- 从 `0.25 -> 0.35` 仍在上涨，但涨幅明显变小
+- 结合稳定性与收益，用户决定把当前最佳值定为 `0.35`
+- 因此项目内默认配置已经更新为 `weight_uniformity = 0.35`
+
+### 8.4 目前对 `weight_uniformity` 的理解
+
+当前观察到的结果说明：
+
+- 在 `iFashion_UB` 这个 `u-b` 图上，`uniformity` 是强影响参数
+- 高 `uniformity` 并不一定异常，反而可能说明该场景下更需要把表示空间拉开
+- 这与“generator 需要在更可分的表示空间里学习交互权重”是相容的
+
+但必须注意：
+
+- 现在只能说 `uniformity` 很重要
+- 还不能说当前 `BOD` 的全部提升已经被证明来自 generator 的权重学习
+
+## 9. 当前正在进行的 Stage 4：generator 相关搜索
+
+spec：
+
+- `scripts/search_specs/bod_stage4_generator.json`
+
+当前设置：
+
+- 固定 `weight_uniformity = 0.35`
+- 固定 `num.max.epoch = 30`
+- 固定其他 backbone / outer settings
+- 搜索：
+  - `GM_AU.-generator_lr = [0.0001, 0.0005, 0.001]`
+  - `GM_AU.-generator_reg = [0.00001, 0.0001]`
+
+共 6 组。
+
+### 9.1 已经跑完的前两组
+
+#### trial_0001
+
+- `generator_lr = 0.0001`
+- `generator_reg = 1e-05`
+- `best_epoch = 26`
+- `Recall@20 = 0.0997639957`
+- `NDCG@20 = 0.0873932009`
+
+#### trial_0002
+
+- `generator_lr = 0.0001`
+- `generator_reg = 0.0001`
+- `best_epoch = 26`
+- `Recall@20 = 0.0997664990`
+- `NDCG@20 = 0.0873953261`
+
+### 9.2 对前两组的判断
+
+这两组几乎完全一样。
+
+差值只有：
+
+- `Recall@20` 约 `2.5e-6`
+- `NDCG@20` 约 `2.1e-6`
+
+这基本可以视作没区别。
+
+### 9.3 为什么变化这么小
+
+当前最重要的解释有两层：
+
+#### 原因 1：这两组只改了 `generator_reg`
+
+- `generator_lr` 都还是最小的 `0.0001`
+- 在 `outer_loop = 1`、`30 epoch` 这个强度下，generator 本来就可能学得较慢
+
+#### 原因 2：当前实现里 `generator_reg` 基本没有真正调到 generator
+
+这是当前最关键的实现事实。
+
+当前代码中：
+
+- `generator_lr` 直接作用到 `optimizer_generator`
+- 但 `generator_reg` 加到的是 `l2_reg_loss(self.generator_reg, user_emb_ol, item_emb_ol)`
+- 这意味着它正则的是 outer-loop 中抽出来的 embedding，而不是 `model_generator.parameters()`
+
+因此：
+
+- `generator_reg = 1e-5`
+- `generator_reg = 1e-4`
+
+这两组本来就不太可能拉出很大差异。
+
+### 9.4 当前阶段结论
+
+基于已完成的前两组，当前更像是：
+
+- 真正把 `BOD` 指标拉起来的主力参数仍然是 `weight_uniformity`
+- generator 这层目前还没有通过当前已观测到的参数变化体现出明显额外增益
+- 所以目前还不能说 generator 已经被这轮搜索“有效激活”
+
+## 10. 当前最重要的研究判断
+
+这是目前整个工作最关键的阶段性结论。
+
+### 10.1 已经能确认的
+
+- `BOD` 在 `iFashion_UB` 上对 `weight_uniformity` 非常敏感
+- `weight_uniformity` 的有效区间明显不是小值，而是较高值
+- 在 `0.35` 左右，指标已经稳定到接近当前阶段最好
+
+### 10.2 还不能确认的
+
+- 还不能确认当前 `BOD` 的提升主要来自 generator 学到的交互权重
+- 目前看到的更像是：表示空间被 `uniformity` 显著拉开后，指标先上来了
+- generator 这层目前仍需进一步验证是否真的在发挥关键作用
+
+### 10.3 当前最值得警惕的点
+
+如果 Stage 4 剩余几组跑完后仍然几乎没变化，需要优先怀疑：
+
+1. 当前 `generator_reg` 实现本身就基本不起作用
+2. `generator_lr + outer_loop=1 + outer_batch_size=128` 这套设置下，generator 学习强度仍然偏弱
+
+## 11. 当前搜索脚本与 spec 文件清单
+
+已存在的 spec：
+
+- `scripts/search_specs/bod_stage1_uniformity.json`
+- `scripts/search_specs/bod_stage2_uniformity_right.json`
+- `scripts/search_specs/bod_stage3_uniformity_right.json`
+- `scripts/search_specs/bod_stage4_generator.json`
+
+这些 spec 都是围绕当前研究主线创建的，不要误删。
+
+## 12. 已踩过的实际坑
+
+### 12.1 `bod_stage4_generator.json` 一度是空文件
+
+已经修复。
+
+如果服务器上再次出现：
+
+- `JSONDecodeError: Expecting value: line 1 column 1 (char 0)`
+
+优先检查对应 spec 文件是否为空。
+
+### 12.2 `SELFRec` 导入失败
+
+历史问题：
+
+- 服务器上直接运行 `python scripts/auto_search.py ...`
+- 可能出现 `ModuleNotFoundError: No module named 'SELFRec'`
+
+已经通过 `sys.path` 注入修复。
+
+### 12.3 训练中偶发 `CUDA illegal memory access`
+
+这是当前最常见的不稳定来源之一。
+
+当前处理策略：
+
+- trial 级子进程隔离
+- 单个 trial 自动重试最多 3 次
+
+## 13. 后续最合理的推进路线
+
+### 路线 A：先把 Stage 4 跑完
+
+这是当前默认路线。
+
+应继续观察：
+
+- `generator_lr = 0.0005`
+- `generator_lr = 0.001`
+
+对应的 4 组结果是否比 `0.0001` 明显更好。
+
+如果更好：
+
+- 说明 generator 不是没用，而是之前学得太慢
+
+如果依然几乎不变：
+
+- 说明当前这套 generator 训练机制要么还不够强，要么 `generator_reg` 这一维本身没有有效信息量
+
+### 路线 B：如果 Stage 4 结果整体仍然几乎不变
+
+优先顺序建议：
+
+1. 不要继续细抠 `generator_reg`
+2. 先看 `generator_lr` 是否有效
+3. 如果 `generator_lr` 也几乎无效，则下一轮重点转向：
+   - `GM_AU.-outer_loop`
+   - `GM_AU.-outer_batch_size`
+4. 同时认真评估是否需要修正 `generator_reg` 的实现，使其真正正则到 generator 参数
+
+### 路线 C：在 BOD 内部调优基本收敛后
+
+再去补强 `LightGCN` baseline：
 
 - `learnRate`
 - `reg.lambda`
 - `batch_size`
 - `LightGCN.-n_layer`
 
-建议区间：
-
-- `learnRate`: `0.001`, `0.002`, `0.003`
-- `reg.lambda`: `1e-5`, `1e-4`, `5e-4`
-- `batch_size`: `256`, `512`, `1024`
-- `LightGCN.-n_layer`: `1`, `2`
-
-建议流程：
-
-1. 先固定 `n_layer=1`
-2. 调 `learnRate` 和 `reg.lambda`
-3. 再看 `batch_size`
-4. 最后再决定要不要试 `n_layer=2`
-
-
-## 6. 自动化脚本设计原则
-
-自动化搜索脚本是：
-
-- [scripts/auto_search.py](d:/PycharmProjects/My_BOD/scripts/auto_search.py:1)
-
-设计原则如下：
-
-- 不修改原始 `conf/*.conf`
-- 每个 trial 都在独立子进程运行
-- 一次 trial 失败不会影响后续 trial
-- 支持 `grid` 和手写 `trials`
-- 自动保存每次实验的临时配置、日志、结构化结果和总表
-
-之所以必须用子进程隔离，是因为训练过程中曾出现过 `CUDA illegal memory access`。这类错误一旦发生，当前 Python 进程里的 CUDA 上下文可能已经不干净，不适合同进程继续跑下一组实验。
-
-
-## 7. 自动化脚本支持什么
-
-### 7.1 支持的功能
-
-- 读取一个 JSON 搜索定义文件
-- 基于 base config 生成多份临时 config
-- 支持普通键覆盖
-- 支持 `OptionConf` 风格参数覆盖
-- 记录失败实验
-- 支持超时控制
-- 支持 `resume`
-- 支持 `dry-run`
-
-
-### 7.2 覆盖语法
-
-#### 普通配置项
-
-直接写原始 key：
-
-```json
-{
-  "batch_size": 256,
-  "learnRate": 0.001,
-  "num.max.epoch": 20
-}
-```
-
-#### `OptionConf` 参数
-
-使用“主键.子参数”的写法：
-
-```json
-{
-  "LightGCN.-n_layer": 1,
-  "GM_AU.-generator_lr": 0.0005,
-  "GM_AU.-weight_uniformity": 0.1
-}
-```
-
-这会自动把：
-
-- `LightGCN=-n_layer 1`
-- `GM_AU=...`
-
-这种字符串重新组装好。
-
-
-## 8. 搜索定义文件格式
-
-一个典型 spec 结构如下：
-
-```json
-{
-  "search_name": "bod_stage1",
-  "base_config": "conf/BOD.conf",
-  "output_dir": "results/search_runs/bod_stage1",
-  "resume": true,
-  "timeout_sec": null,
-  "fixed_overrides": {
-    "num.max.epoch": 20,
-    "batch_size": 256
-  },
-  "grid": {
-    "GM_AU.-weight_uniformity": [0.0, 0.05, 0.1],
-    "GM_AU.-generator_lr": [0.0001, 0.0005]
-  },
-  "trials": [
-    {
-      "name": "manual_alignment_boost",
-      "overrides": {
-        "GM_AU.-weight_alignment": 2,
-        "GM_AU.-weight_bpr": 1
-      }
-    }
-  ]
-}
-```
-
-
-### 8.1 字段说明
-
-- `search_name`
-  - 搜索任务名称
-- `base_config`
-  - 基础配置文件
-- `output_dir`
-  - 结果输出目录
-- `resume`
-  - 是否跳过已完成 trial
-- `timeout_sec`
-  - 单次 trial 的超时时间，秒；`null` 表示不设
-- `fixed_overrides`
-  - 所有 trial 都共享的配置覆盖
-- `grid`
-  - 自动笛卡尔积展开
-- `trials`
-  - 手写 trial 列表
-
-
-## 9. 自动化脚本的使用方式
-
-### 9.1 打印示例 spec
-
-```bash
-python scripts/auto_search.py --print-example
-```
-
-
-### 9.2 先做 dry-run
-
-推荐任何正式搜索前都先跑：
-
-```bash
-python scripts/auto_search.py --spec path/to/search.json --dry-run
-```
-
-`dry-run` 会做这些事：
-
-- 解析 spec
-- 展开所有 trial
-- 生成临时配置文件
-- 打印每个 trial 的签名和配置路径
-
-但不会真正启动训练。
-
-
-### 9.3 正式执行搜索
-
-```bash
-python scripts/auto_search.py --spec path/to/search.json
-```
-
-
-## 10. 输出结果会放到哪里
-
-假设 `output_dir` 是：
-
-```text
-results/search_runs/bod_stage1
-```
-
-脚本会生成：
-
-- `configs/`
-  - 每个 trial 的临时配置文件
-- `logs/`
-  - 每个 trial 的完整 stdout/stderr
-- `trial_results/`
-  - 每个 trial 的结构化结果 JSON
-- `summary.jsonl`
-  - 机器可读总表，按 trial 逐条追加
-- `summary.csv`
-  - 适合直接看和筛选的表格版本
-
-
-## 11. 失败和跳过的行为
-
-### 11.1 单次 trial 失败
-
-不会中断总控脚本。
-
-脚本会：
-
-- 记录失败状态
-- 记录错误类型
-- 记录错误信息
-- 继续下一组 trial
-
-
-### 11.2 超时
-
-如果设置了 `timeout_sec`，超时 trial 会被标记为：
-
-- `timeout`
-
-也不会影响其他 trial。
-
-
-### 11.3 resume
-
-如果 `resume=true`，脚本会根据 trial 覆盖参数的签名跳过已经完成的实验。
-
-适合这些场景：
-
-- 上次搜索跑到一半中断
-- 需要补跑后半段
-- 搜索文件基本相同，只新增了少量 trial
-
-
-## 12. 自动化搜索时的实际建议
-
-### 12.1 先串行，不要并行
-
-目前不建议一开始做 GPU 并行搜索，原因：
-
-- `BOD` 本身较重
-- 稀疏图训练对显存和 CUDA 稳定性更敏感
-- 并行会放大干扰因素
-
-先把串行搜索稳定跑通，再考虑更激进的方案。
-
-
-### 12.2 每次只调一层
-
-不建议一开始在同一轮搜索里同时混入：
-
-- backbone 深度变化
-- generator 学习率变化
-- 多个损失权重大范围变化
-
-更好的做法是：
-
-1. 一轮只扫 `uniformity`
-2. 下一轮固定最优值，扫 `generator_lr / generator_reg`
-3. 再下一轮扫 `alignment / bpr / outer_batch_size`
-
-
-### 12.3 先看趋势，再看最终最优
-
-自动化搜索最重要的不是“第一次就找到最佳值”，而是尽快看出：
-
-- 哪些参数方向有效
-- 哪些参数明显无效
-- 哪些参数会带来不稳定
-
-所以早期实验更强调“筛方向”，不是“抠小数点”。
-
-
-## 13. 一份建议的第一轮 BOD 搜索
-
-如果现在就要开始做第一轮 `BOD` 搜索，我建议：
-
-- base config：`conf/BOD.conf`
-- 固定：
-  - `num.max.epoch=20`
-  - `batch_size=256`
-  - `LightGCN.-n_layer=1`
-  - `learnRate=0.001`
-  - `GM_AU.-outer_loop=1`
-  - `GM_AU.-inner_loop=1`
-- 第一轮只扫：
-  - `GM_AU.-weight_uniformity = [0, 0.02, 0.05, 0.1]`
-
-如果第一轮里某个区间明显最好，再做第二轮：
-
-- 固定最优 `uniformity`
-- 扫：
-  - `GM_AU.-generator_lr = [1e-4, 5e-4, 1e-3]`
-  - `GM_AU.-generator_reg = [1e-5, 1e-4]`
-
-
-## 14. 推荐工作流
-
-后面建议按这个顺序推进：
-
-1. 写一份 `BOD` 第一轮 spec
-2. 先 `dry-run`
-3. 正式跑自动化搜索
-4. 看 `summary.csv`
-5. 选出前几组
-6. 再写第二轮 spec
-7. 等 `BOD` 定住后，再做 `LightGCN` 搜索
-
-
-## 15. 结论
-
-当前最重要的不是“把所有参数一下子搜完”，而是：
-
-- 先让搜索过程稳定、可追踪、可恢复
-- 再按分层思路逐步缩小参数空间
-
-所以目前最合理的策略是：
-
-- 先用 `scripts/auto_search.py` 做阶段化的 `BOD` 搜索
-- 主看 `NDCG@20`
-- 从 `uniformity -> generator -> outer loss balance -> backbone strength` 这个顺序推进
-
-后面如果开启新对话，就以这份文档作为统一上下文即可。
+但在当前阶段，`LightGCN` 还不是优先级最高的任务。
+
+## 14. 当前最推荐的工作原则
+
+- 不在本地启动训练
+- 本地只做代码修改、脚本修改、文档整理、逻辑分析
+- 训练全部由用户在服务器上执行
+- 每一轮搜索尽量只动一层变量
+- 先看趋势，再看极小数点差异
+- 早期更重视“哪个方向有效”，而不是过早抠极小差值
+
+## 15. 给下一轮对话的直接交接
+
+如果下一轮对话由新的助手接手，请直接按下面方式进入工作：
+
+1. 先完整读完本文件
+2. 确认当前 `conf/BOD.conf` 中 `weight_uniformity = 0.35`
+3. 确认 `scripts/auto_search.py` 已包含：
+   - repo root 注入
+   - trial 自动重试
+4. 优先读取 Stage 4 当前结果
+5. 判断 `generator_lr = 0.0005 / 0.001` 是否带来明显增益
+6. 若无明显增益，优先分析：
+   - `generator_reg` 当前实现为何无效
+   - 是否要转调 `outer_loop / outer_batch_size`
+7. 不要把讨论发散到其他模型或其他数据集
+
+## 16. 当前一句话状态总结
+
+当前已经确认：`BOD` 在 `iFashion_UB` 上对 `weight_uniformity` 极其敏感，`0.35` 是当前确定下来的工作点；但 generator 这一层是否已经真正学成，仍未被当前结果充分证明，下一阶段的重点是继续看 `generator_lr` 是否能把这层能力真正拉出来。
