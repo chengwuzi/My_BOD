@@ -176,11 +176,13 @@
 - `learnRate=0.001`
 - `reg.lambda=0.0001`
 - `LightGCN=-n_layer 1`
-- `GM_AU=-generator_lr 0.0005 -generator_reg 0.0001 -generator_emb_size 64 -outer_loop 1 -inner_loop 1 -outer_batch_size 128 -weight_bpr 1 -weight_alignment 1 -weight_uniformity 0.35`
+- `GM_AU=-generator_lr 0.001 -generator_reg 0.0001 -generator_emb_size 64 -outer_loop 1 -inner_loop 1 -outer_batch_size 128 -weight_bpr 1 -weight_alignment 1 -weight_uniformity 0.35`
 
 重点：
 
 - `weight_uniformity` 已经被正式定到 `0.35`
+- `generator_lr` 基于 Stage 4 完整结果，更新为 `0.001`
+- `generator_reg` 保留 `0.0001`
 - `num.max.epoch` 已更新到 `30`
 
 ### 7.2 当前阶段默认固定住的参数
@@ -198,6 +200,8 @@
 - `GM_AU.-weight_bpr = 1`
 - `GM_AU.-weight_alignment = 1`
 - `GM_AU.-weight_uniformity = 0.35`
+- `GM_AU.-generator_lr = 0.001`
+- `GM_AU.-generator_reg = 0.0001`
 
 ## 8. 已完成的搜索阶段与结果
 
@@ -322,7 +326,7 @@ spec：
 - 现在只能说 `uniformity` 很重要
 - 还不能说当前 `BOD` 的全部提升已经被证明来自 generator 的权重学习
 
-## 9. 当前正在进行的 Stage 4：generator 相关搜索
+## 9. 已完成的 Stage 4：generator 相关搜索
 
 spec：
 
@@ -339,47 +343,69 @@ spec：
 
 共 6 组。
 
-### 9.1 已经跑完的前两组
+### 9.1 全部 6 组结果
 
-#### trial_0001
+- `trial_0001`
+  - `generator_lr = 0.0001`
+  - `generator_reg = 1e-05`
+  - `best_epoch = 26`
+  - `Recall@20 = 0.0997639957`
+  - `NDCG@20 = 0.0873932009`
 
-- `generator_lr = 0.0001`
-- `generator_reg = 1e-05`
-- `best_epoch = 26`
-- `Recall@20 = 0.0997639957`
-- `NDCG@20 = 0.0873932009`
+- `trial_0002`
+  - `generator_lr = 0.0001`
+  - `generator_reg = 0.0001`
+  - `best_epoch = 26`
+  - `Recall@20 = 0.0997664990`
+  - `NDCG@20 = 0.0873953261`
+  - 第 1 次尝试因 `CUDA illegal memory access` 失败，第 2 次成功
 
-#### trial_0002
+- `trial_0003`
+  - `generator_lr = 0.0005`
+  - `generator_reg = 1e-05`
+  - `best_epoch = 26`
+  - `Recall@20 = 0.0998831146`
+  - `NDCG@20 = 0.0874471235`
+  - 第 1 次尝试因 `CUDA illegal memory access` 失败，第 2 次成功
 
-- `generator_lr = 0.0001`
-- `generator_reg = 0.0001`
-- `best_epoch = 26`
-- `Recall@20 = 0.0997664990`
-- `NDCG@20 = 0.0873953261`
+- `trial_0004`
+  - `generator_lr = 0.0005`
+  - `generator_reg = 0.0001`
+  - 连续 3 次都因 `CUDA illegal memory access` 失败
 
-### 9.2 对前两组的判断
+- `trial_0005`
+  - `generator_lr = 0.001`
+  - `generator_reg = 1e-05`
+  - `best_epoch = 27`
+  - `Recall@20 = 0.0998637286`
+  - `NDCG@20 = 0.0875090974`
+  - 第 1 次尝试因 `CUDA illegal memory access` 失败，第 2 次成功
 
-这两组几乎完全一样。
+- `trial_0006`
+  - `generator_lr = 0.001`
+  - `generator_reg = 0.0001`
+  - `best_epoch = 27`
+  - `Recall@20 = 0.0998743617`
+  - `NDCG@20 = 0.0875125534`
 
-差值只有：
+### 9.2 对 Stage 4 结果的判断
 
-- `Recall@20` 约 `2.5e-6`
-- `NDCG@20` 约 `2.1e-6`
+从完整 6 组结果看：
 
-这基本可以视作没区别。
+- `generator_reg` 这一维几乎没有信息量
+  - 在相同 `generator_lr` 下，`1e-05` 和 `0.0001` 的差距始终极小
+  - 这和当前代码实现完全一致，因为它没有真正正则到 generator 参数
 
-### 9.3 为什么变化这么小
+- `generator_lr` 有弱信号，但没有出现大幅提升
+  - `0.0001` 两组略差
+  - `0.0005` 和 `0.001` 更接近当前前沿
+  - 完整成功结果里，`0.001 + 0.0001` 的 `NDCG@20` 最高
+
+### 9.3 为什么变化整体不大
 
 当前最重要的解释有两层：
 
-#### 原因 1：这两组只改了 `generator_reg`
-
-- `generator_lr` 都还是最小的 `0.0001`
-- 在 `outer_loop = 1`、`30 epoch` 这个强度下，generator 本来就可能学得较慢
-
-#### 原因 2：当前实现里 `generator_reg` 基本没有真正调到 generator
-
-这是当前最关键的实现事实。
+#### 原因 1：`generator_reg` 当前实现基本没有真正调到 generator
 
 当前代码中：
 
@@ -387,20 +413,26 @@ spec：
 - 但 `generator_reg` 加到的是 `l2_reg_loss(self.generator_reg, user_emb_ol, item_emb_ol)`
 - 这意味着它正则的是 outer-loop 中抽出来的 embedding，而不是 `model_generator.parameters()`
 
-因此：
+所以 `generator_reg = 1e-5` 和 `generator_reg = 1e-4` 本来就不太可能拉出大差异。
 
-- `generator_reg = 1e-5`
-- `generator_reg = 1e-4`
+#### 原因 2：当前 generator 学习强度仍然偏弱
 
-这两组本来就不太可能拉出很大差异。
+- `outer_loop = 1`
+- `outer_batch_size = 128`
+- 总 epoch = `30`
+
+在这套设置下，即便 `generator_lr` 从 `0.0001` 提到 `0.001`，也只表现为弱增益，而没有出现明显跳升。
 
 ### 9.4 当前阶段结论
 
-基于已完成的前两组，当前更像是：
+Stage 4 完整跑完后，可以定下以下结论：
 
-- 真正把 `BOD` 指标拉起来的主力参数仍然是 `weight_uniformity`
-- generator 这层目前还没有通过当前已观测到的参数变化体现出明显额外增益
-- 所以目前还不能说 generator 已经被这轮搜索“有效激活”
+- `weight_uniformity = 0.35` 继续作为 BOD 当前正式工作点
+- `generator_lr` 在完整成功结果里以 `0.001` 最优，因此本地默认配置更新为 `0.001`
+- `generator_reg` 保留 `0.0001`，但当前不要再继续围绕它做搜索
+- 仅凭 Stage 4 参数变化幅度很小，还不能推出“BOD 的提升没有来自 generator 学到的权重”
+- 如果要判断 generator 权重机制是否真正有效，需要额外做 ablation：去掉 BOD 权重机制，直接与纯 `LightGCN` 比较，才能回答“有无 generator 权重机制是否真的造成差异”
+- 当前阶段先不继续做 BOD 搜索，后续重点转向把 `LightGCN` 在 `iFashion_UB` 上调到更强 baseline
 
 ## 10. 当前最重要的研究判断
 
@@ -414,13 +446,13 @@ spec：
 
 ### 10.2 还不能确认的
 
-- 还不能确认当前 `BOD` 的提升主要来自 generator 学到的交互权重
-- 目前看到的更像是：表示空间被 `uniformity` 显著拉开后，指标先上来了
-- generator 这层目前仍需进一步验证是否真的在发挥关键作用
+- 还不能确认当前 `BOD` 的提升有多大比例来自 generator 学到的交互权重
+- Stage 4 只能说明：现有超参搜索没有把 generator 作用进一步明显放大
+- 但这不等于“generator 权重机制没有贡献”；要证明这一点，必须做去掉该机制的 ablation，对照纯 `LightGCN`
 
 ### 10.3 当前最值得警惕的点
 
-如果 Stage 4 剩余几组跑完后仍然几乎没变化，需要优先怀疑：
+需要特别记住：
 
 1. 当前 `generator_reg` 实现本身就基本不起作用
 2. `generator_lr + outer_loop=1 + outer_batch_size=128` 这套设置下，generator 学习强度仍然偏弱
@@ -468,46 +500,32 @@ spec：
 
 ## 13. 后续最合理的推进路线
 
-### 路线 A：先把 Stage 4 跑完
+### 路线 A：BOD 侧先收束，不再继续搜参
 
-这是当前默认路线。
+- BOD 当前工作点固定为：
+  - `weight_uniformity = 0.35`
+  - `generator_lr = 0.001`
+  - `generator_reg = 0.0001`
+- 当前不再继续做 BOD 参数搜索
 
-应继续观察：
+### 路线 B：把 `LightGCN` 在 `iFashion_UB` 上调到尽量强
 
-- `generator_lr = 0.0005`
-- `generator_lr = 0.001`
-
-对应的 4 组结果是否比 `0.0001` 明显更好。
-
-如果更好：
-
-- 说明 generator 不是没用，而是之前学得太慢
-
-如果依然几乎不变：
-
-- 说明当前这套 generator 训练机制要么还不够强，要么 `generator_reg` 这一维本身没有有效信息量
-
-### 路线 B：如果 Stage 4 结果整体仍然几乎不变
-
-优先顺序建议：
-
-1. 不要继续细抠 `generator_reg`
-2. 先看 `generator_lr` 是否有效
-3. 如果 `generator_lr` 也几乎无效，则下一轮重点转向：
-   - `GM_AU.-outer_loop`
-   - `GM_AU.-outer_batch_size`
-4. 同时认真评估是否需要修正 `generator_reg` 的实现，使其真正正则到 generator 参数
-
-### 路线 C：在 BOD 内部调优基本收敛后
-
-再去补强 `LightGCN` baseline：
+后续优先调：
 
 - `learnRate`
 - `reg.lambda`
 - `batch_size`
 - `LightGCN.-n_layer`
+- 必要时再看 `num.max.epoch`
 
-但在当前阶段，`LightGCN` 还不是优先级最高的任务。
+目标不是继续抠 BOD 内部微小差异，而是先把 `LightGCN` baseline 做强，再回头判断 BOD 的真实优势。
+
+### 路线 C：如果未来还要重新验证 generator 机制
+
+那时不要直接回到细抠现有超参，而应优先考虑：
+
+1. 做“去掉 BOD 权重机制”的 ablation
+2. 必要时再改 `generator_reg` 实现，使其真正正则到 generator 参数
 
 ## 14. 当前最推荐的工作原则
 
@@ -524,16 +542,15 @@ spec：
 
 1. 先完整读完本文件
 2. 确认当前 `conf/BOD.conf` 中 `weight_uniformity = 0.35`
-3. 确认 `scripts/auto_search.py` 已包含：
+3. 确认当前 `conf/BOD.conf` 中 `generator_lr = 0.001`
+4. 确认 `scripts/auto_search.py` 已包含：
    - repo root 注入
    - trial 自动重试
-4. 优先读取 Stage 4 当前结果
-5. 判断 `generator_lr = 0.0005 / 0.001` 是否带来明显增益
-6. 若无明显增益，优先分析：
-   - `generator_reg` 当前实现为何无效
-   - 是否要转调 `outer_loop / outer_batch_size`
-7. 不要把讨论发散到其他模型或其他数据集
+5. 把 BOD 视为当前已收束的工作点，不再继续做参数搜索
+6. 后续优先任务改为：把 `LightGCN` 在 `iFashion_UB` 上调到更强 baseline
+7. 如果要讨论 generator 是否有效，优先考虑 ablation，而不是继续只看当前 Stage 4 的微小差值
+8. 不要把讨论发散到其他模型或其他数据集
 
 ## 16. 当前一句话状态总结
 
-当前已经确认：`BOD` 在 `iFashion_UB` 上对 `weight_uniformity` 极其敏感，`0.35` 是当前确定下来的工作点；但 generator 这一层是否已经真正学成，仍未被当前结果充分证明，下一阶段的重点是继续看 `generator_lr` 是否能把这层能力真正拉出来。
+当前已经确认：`BOD` 在 `iFashion_UB` 上对 `weight_uniformity` 极其敏感，当前工作点固定为 `weight_uniformity = 0.35`、`generator_lr = 0.001`、`generator_reg = 0.0001`；Stage 4 已结束，BOD 暂不继续搜参，下一阶段的重点转为把 `LightGCN` 在 `iFashion_UB` 上调到尽量强，并在需要时通过 ablation 再判断 generator 权重机制的真实贡献。

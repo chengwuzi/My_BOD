@@ -346,3 +346,158 @@ Quick Ranking Performance
 Epoch: 28, Recall@10:0.06403496124014155 | NDCG@10:0.07265834915566825 | Recall@20:0.09986900568682062 | NDCG@20:0.08731883277924742
 *Best Performance*
 Epoch: 22, Recall@10:0.06440359831542607 | NDCG@10:0.07298766014273304 | Recall@20:0.09995725656522514 | NDCG@20:0.08745292833245076
+========================================================================================================================
+Time: 2026-04-13 22-41-19
+Model: BOD
+Dataset: iFashion_UB
+Training Set: /code/25-chenglong/My_BOD/My_BOD/dataset/iFashion_UB/train.txt
+Test Set: /code/25-chenglong/My_BOD/My_BOD/dataset/iFashion_UB/test.txt
+Best Epoch: 26
+Best Metrics: Recall@10:0.064094140601915 | NDCG@10:0.07284121789196787 | Recall@20:0.09976399566335128 | NDCG@20:0.08739320094962325
+Configuration:
+GM_AU=-generator_lr 0.0001 -generator_reg 1e-05 -generator_emb_size 64 -outer_loop 1 -inner_loop 1 -outer_batch_size 128 -weight_bpr 1 -weight_alignment 1 -weight_uniformity 0.35
+LightGCN=-n_layer 1
+batch_size=256
+dataset.name=iFashion_UB
+embbedding.size=64
+generator=VAE
+item.ranking=-topN 10,20
+learnRate=0.001
+model.name=BOD
+model.type=graph
+num.max.epoch=30
+output.setup=-dir ./results/
+reg.lambda=0.0001
+search.name=bod_stage4_generator
+seed=3407
+test.set=./dataset/iFashion_UB/test.txt
+training.set=./dataset/iFashion_UB/train.txt
+trainmodel=LightGCN
+trial.id=trial_0001
+trial.name=grid_0001
+trial.signature=7bdc5cf2a3c9
+
+========================================================================================================================
+Time: 2026-04-14 00-32-41
+Model: BOD
+Dataset: iFashion_UB
+Training Set: /code/25-chenglong/My_BOD/My_BOD/dataset/iFashion_UB/train.txt
+Test Set: /code/25-chenglong/My_BOD/My_BOD/dataset/iFashion_UB/test.txt
+Best Epoch: 26
+Best Metrics: Recall@10:0.06409988347831856 | NDCG@10:0.07284527613047465 | Recall@20:0.09976649896845029 | NDCG@20:0.08739532608405402
+Configuration:
+GM_AU=-generator_lr 0.0001 -generator_reg 0.0001 -generator_emb_size 64 -outer_loop 1 -inner_loop 1 -outer_batch_size 128 -weight_bpr 1 -weight_alignment 1 -weight_uniformity 0.35
+LightGCN=-n_layer 1
+batch_size=256
+dataset.name=iFashion_UB
+embbedding.size=64
+generator=VAE
+item.ranking=-topN 10,20
+learnRate=0.001
+model.name=BOD
+model.type=graph
+num.max.epoch=30
+output.setup=-dir ./results/
+reg.lambda=0.0001
+search.name=bod_stage4_generator
+seed=3407
+test.set=./dataset/iFashion_UB/test.txt
+training.set=./dataset/iFashion_UB/train.txt
+trainmodel=LightGCN
+trial.id=trial_0002
+trial.name=grid_0002
+trial.signature=52994b71c287
+
+========================================================================================================================
+Time: 2026-04-14 02-15-01
+Model: BOD
+Dataset: iFashion_UB
+Training Set: /code/25-chenglong/My_BOD/My_BOD/dataset/iFashion_UB/train.txt
+Test Set: /code/25-chenglong/My_BOD/My_BOD/dataset/iFashion_UB/test.txt
+Best Epoch: 26
+Best Metrics: Recall@10:0.06416502650685348 | NDCG@10:0.07287444724384144 | Recall@20:0.09988311455524568 | NDCG@20:0.0874471235250688
+Configuration:
+GM_AU=-generator_lr 0.0005 -generator_reg 1e-05 -generator_emb_size 64 -outer_loop 1 -inner_loop 1 -outer_batch_size 128 -weight_bpr 1 -weight_alignment 1 -weight_uniformity 0.35
+LightGCN=-n_layer 1
+batch_size=256
+dataset.name=iFashion_UB
+embbedding.size=64
+generator=VAE
+item.ranking=-topN 10,20
+learnRate=0.001
+model.name=BOD
+model.type=graph
+num.max.epoch=30
+output.setup=-dir ./results/
+reg.lambda=0.0001
+search.name=bod_stage4_generator
+seed=3407
+test.set=./dataset/iFashion_UB/test.txt
+training.set=./dataset/iFashion_UB/train.txt
+trainmodel=LightGCN
+trial.id=trial_0003
+trial.name=grid_0003
+trial.signature=11013f331595
+
+========================================================================================================================
+Time: 2026-04-14 05-33-13
+Model: BOD
+Dataset: iFashion_UB
+Training Set: /code/25-chenglong/My_BOD/My_BOD/dataset/iFashion_UB/train.txt
+Test Set: /code/25-chenglong/My_BOD/My_BOD/dataset/iFashion_UB/test.txt
+Best Epoch: 27
+Best Metrics: Recall@10:0.06431930404514985 | NDCG@10:0.07303210670486437 | Recall@20:0.0998637286046984 | NDCG@20:0.08750909743513638
+Configuration:
+GM_AU=-generator_lr 0.001 -generator_reg 1e-05 -generator_emb_size 64 -outer_loop 1 -inner_loop 1 -outer_batch_size 128 -weight_bpr 1 -weight_alignment 1 -weight_uniformity 0.35
+LightGCN=-n_layer 1
+batch_size=256
+dataset.name=iFashion_UB
+embbedding.size=64
+generator=VAE
+item.ranking=-topN 10,20
+learnRate=0.001
+model.name=BOD
+model.type=graph
+num.max.epoch=30
+output.setup=-dir ./results/
+reg.lambda=0.0001
+search.name=bod_stage4_generator
+seed=3407
+test.set=./dataset/iFashion_UB/test.txt
+training.set=./dataset/iFashion_UB/train.txt
+trainmodel=LightGCN
+trial.id=trial_0005
+trial.name=grid_0005
+trial.signature=763c56d1cf0e
+
+========================================================================================================================
+Time: 2026-04-14 06-37-30
+Model: BOD
+Dataset: iFashion_UB
+Training Set: /code/25-chenglong/My_BOD/My_BOD/dataset/iFashion_UB/train.txt
+Test Set: /code/25-chenglong/My_BOD/My_BOD/dataset/iFashion_UB/test.txt
+Best Epoch: 27
+Best Metrics: Recall@10:0.06432012866330011 | NDCG@10:0.07303086605608473 | Recall@20:0.09987436170460362 | NDCG@20:0.0875125533680171
+Configuration:
+GM_AU=-generator_lr 0.001 -generator_reg 0.0001 -generator_emb_size 64 -outer_loop 1 -inner_loop 1 -outer_batch_size 128 -weight_bpr 1 -weight_alignment 1 -weight_uniformity 0.35
+LightGCN=-n_layer 1
+batch_size=256
+dataset.name=iFashion_UB
+embbedding.size=64
+generator=VAE
+item.ranking=-topN 10,20
+learnRate=0.001
+model.name=BOD
+model.type=graph
+num.max.epoch=30
+output.setup=-dir ./results/
+reg.lambda=0.0001
+search.name=bod_stage4_generator
+seed=3407
+test.set=./dataset/iFashion_UB/test.txt
+training.set=./dataset/iFashion_UB/train.txt
+trainmodel=LightGCN
+trial.id=trial_0006
+trial.name=grid_0006
+trial.signature=9d9bc01fcddc
+
