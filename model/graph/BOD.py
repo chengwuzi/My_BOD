@@ -1,16 +1,27 @@
-from util.conf import OptionConf
 import torch
 import torch.nn as nn
-from base.graph_recommender import GraphRecommender
-from util.sampler import next_batch_pairwise, next_batch_pointwise,sample_batch_pointwise,sample_batch_pairwise
-from util.loss_torch import bpr_loss,l2_reg_loss,alignment_loss,uniformity_loss,alignment_loss_weight,alignment_loss_weight_1,InfoNCE,bpr_loss_weight
 import torch.nn.functional as F
-from base.torch_interface import TorchGraphInterface
 import numpy as np
 import time
 import os
-from data.augmentor import GraphAugmentor
-from data.ui_graph import Interaction
+from core_runtime import (
+    GraphAugmentor,
+    GraphRecommender,
+    InfoNCE,
+    OptionConf,
+    TorchGraphInterface,
+    alignment_loss,
+    alignment_loss_weight,
+    alignment_loss_weight_1,
+    bpr_loss,
+    bpr_loss_weight,
+    l2_reg_loss,
+    next_batch_pairwise,
+    next_batch_pointwise,
+    sample_batch_pairwise,
+    sample_batch_pointwise,
+    uniformity_loss,
+)
 
 
 def match_loss(gw_syn, gw_real, dis_metric):

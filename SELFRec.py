@@ -1,4 +1,4 @@
-from data.loader import FileIO
+from core_runtime import FileIO
 
 
 class SELFRec(object):

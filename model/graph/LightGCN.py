@@ -1,10 +1,13 @@
 import torch
 import torch.nn as nn
-from base.graph_recommender import GraphRecommender
-from util.conf import OptionConf
-from util.sampler import next_batch_pairwise
-from base.torch_interface import TorchGraphInterface
-from util.loss_torch import bpr_loss,l2_reg_loss
+from core_runtime import (
+    GraphRecommender,
+    OptionConf,
+    TorchGraphInterface,
+    bpr_loss,
+    l2_reg_loss,
+    next_batch_pairwise,
+)
 import time
 # paper: LightGCN: Simplifying and Powering Graph Convolution Network for Recommendation. SIGIR'20
 

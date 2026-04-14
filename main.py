@@ -1,5 +1,5 @@
 from SELFRec import SELFRec
-from util.conf import ModelConf
+from core_runtime import ModelConf
 
 if __name__ == '__main__':
     baseline = ['LightGCN']

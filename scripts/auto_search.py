@@ -409,7 +409,7 @@ def run_trial_subprocess(
 
 def execute_trial(config_path: Path, result_json: Path) -> int:
     from SELFRec import SELFRec
-    from util.conf import ModelConf
+    from core_runtime import ModelConf
 
     start_time = time.time()
     try:
