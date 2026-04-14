@@ -96,14 +96,15 @@ class OptionConf(object):
 
 class Log(object):
     def __init__(self, module, filename):
-        self.logger = logging.getLogger(module)
+        self.logger = logging.getLogger(f'{module}.{filename}')
         self.logger.setLevel(level=logging.INFO)
-        if not os.path.exists('./log/'):
-            os.makedirs('./log/')
+        self.logger.propagate = False
+        os.makedirs('./log/', exist_ok=True)
         handler = logging.FileHandler('./log/' + filename + '.log')
         formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
         handler.setFormatter(formatter)
-        self.logger.addHandler(handler)
+        if not self.logger.handlers:
+            self.logger.addHandler(handler)
 
     def add(self, text):
         self.logger.info(text)
@@ -122,7 +123,7 @@ def seed_everything(seed: int) -> None:
 
 
 def next_batch_pairwise(data, batch_size):
-    training_data = data.training_data
+    training_data = data.training_data[:]
     random.shuffle(training_data)
     batch_id = 0
     data_size = len(training_data)
@@ -167,7 +168,7 @@ def sample_batch_pairwise(data, batch_size):
 
 
 def next_batch_pointwise(data, batch_size):
-    training_data = data.training_data
+    training_data = data.training_data[:]
     data_size = len(training_data)
     batch_id = 0
     while batch_id < data_size:
@@ -464,35 +465,14 @@ def denormalize(vec, max_val, min_val):
     return min_val + (vec - 0.01) * (max_val - min_val)
 
 
-@jit(nopython=True)
 def find_k_largest(K, candidates):
-    n_candidates = []
-    for iid, score in enumerate(candidates[:K]):
-        n_candidates.append((iid, score))
-    n_candidates.sort(key=lambda d: d[1], reverse=True)
-    k_largest_scores = [item[1] for item in n_candidates]
-    ids = [item[0] for item in n_candidates]
-    for iid, score in enumerate(candidates):
-        ind = K
-        l = 0
-        r = K - 1
-        if k_largest_scores[r] < score:
-            while r >= l:
-                mid = int((r - l) / 2) + l
-                if k_largest_scores[mid] >= score:
-                    l = mid + 1
-                elif k_largest_scores[mid] < score:
-                    r = mid - 1
-                if r < l:
-                    ind = r
-                    break
-        if ind < K - 2:
-            k_largest_scores[ind + 2:] = k_largest_scores[ind + 1:-1]
-            ids[ind + 2:] = ids[ind + 1:-1]
-        if ind < K - 1:
-            k_largest_scores[ind + 1] = score
-            ids[ind + 1] = iid
-    return ids, k_largest_scores
+    candidates = np.asarray(candidates)
+    if K <= 0 or candidates.size == 0:
+        return [], []
+    K = min(K, candidates.shape[0])
+    top_ids = np.argpartition(candidates, -K)[-K:]
+    top_ids = top_ids[np.argsort(candidates[top_ids])[::-1]]
+    return top_ids.tolist(), candidates[top_ids].tolist()
 
 
 class Metric(object):

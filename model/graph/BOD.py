@@ -62,7 +62,7 @@ class BOD(rt.GraphRecommender):
         self.outer_batch_size = int(args['-outer_batch_size']) if args.contain('-outer_batch_size') else min(self.batch_size, 128)
         self.lightgcn_layers = 2
         if self.config.contain('LightGCN'):
-            lightgcn_args = OptionConf(self.config['LightGCN'])
+            lightgcn_args = rt.OptionConf(self.config['LightGCN'])
             if lightgcn_args.contain('-n_layer'):
                 self.lightgcn_layers = int(lightgcn_args['-n_layer'])
         if self.trainmodel == "MF":
