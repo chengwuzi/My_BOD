@@ -4,24 +4,7 @@ import torch.nn.functional as F
 import numpy as np
 import time
 import os
-from core_runtime import (
-    GraphAugmentor,
-    GraphRecommender,
-    InfoNCE,
-    OptionConf,
-    TorchGraphInterface,
-    alignment_loss,
-    alignment_loss_weight,
-    alignment_loss_weight_1,
-    bpr_loss,
-    bpr_loss_weight,
-    l2_reg_loss,
-    next_batch_pairwise,
-    next_batch_pointwise,
-    sample_batch_pairwise,
-    sample_batch_pointwise,
-    uniformity_loss,
-)
+import core_runtime as rt
 
 
 def match_loss(gw_syn, gw_real, dis_metric):
@@ -60,14 +43,14 @@ def distance_wb(gwr, gws):
     dis = dis_weight
     return dis
     
-class BOD(GraphRecommender):
+class BOD(rt.GraphRecommender):
     def __init__(self, conf, training_set, test_set):
         super(BOD, self).__init__(conf, training_set, test_set)
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.trainmodel = self.config['trainmodel']
         self.generator = self.config['generator']
         self.datasetname = self.config['dataset.name']
-        args = OptionConf(self.config['GM_AU'])
+        args = rt.OptionConf(self.config['GM_AU'])
         self.generator_lr = float(args['-generator_lr'])
         self.generator_reg = float(args['-generator_reg'])
         self.generator_emb_size = int(args['-generator_emb_size'])
@@ -122,7 +105,7 @@ class BOD(GraphRecommender):
                 if self.trainmodel == "SGL":
                     dropped_adj1 = model.graph_reconstruction()
                     dropped_adj2 = model.graph_reconstruction()
-                for n, batch in enumerate(next_batch_pairwise(self.data, self.batch_size)):
+                for n, batch in enumerate(rt.next_batch_pairwise(self.data, self.batch_size)):
                     u_idx, pos_i_idx, neg_i_idx = batch
                     u_idx = torch.as_tensor(u_idx, device=self.device, dtype=torch.long)
                     pos_i_idx = torch.as_tensor(pos_i_idx, device=self.device, dtype=torch.long)
@@ -141,14 +124,14 @@ class BOD(GraphRecommender):
                         A_weight_inner_full_detach = model_generator(pos_user_emb_syn, pos_item_emb_syn)
                         A_weight_inner_full_neg_detach = model_generator(pos_user_emb_syn, neg_item_emb_syn)
                     
-                    bpr_inner = bpr_loss_weight(pos_user_emb_syn, pos_item_emb_syn, neg_item_emb_syn, A_weight_inner_full_detach, A_weight_inner_full_neg_detach)
-                    alignment_inner = alignment_loss_weight_1(pos_user_emb_syn, pos_item_emb_syn, A_weight_inner_full_detach)
+                    bpr_inner = rt.bpr_loss_weight(pos_user_emb_syn, pos_item_emb_syn, neg_item_emb_syn, A_weight_inner_full_detach, A_weight_inner_full_neg_detach)
+                    alignment_inner = rt.alignment_loss_weight_1(pos_user_emb_syn, pos_item_emb_syn, A_weight_inner_full_detach)
 
                     uniformity_inner = (
-                        uniformity_loss(pos_user_emb_syn) +
-                        uniformity_loss(pos_user_emb_syn) +
-                        uniformity_loss(pos_item_emb_syn) +
-                        uniformity_loss(neg_item_emb_syn)
+                        rt.uniformity_loss(pos_user_emb_syn) +
+                        rt.uniformity_loss(pos_user_emb_syn) +
+                        rt.uniformity_loss(pos_item_emb_syn) +
+                        rt.uniformity_loss(neg_item_emb_syn)
                     ) / 4
                     if self.trainmodel == "SimGCL":
                         cl_loss = 0.005 * model.cal_cl_loss([u_idx,pos_i_idx])
@@ -186,7 +169,7 @@ class BOD(GraphRecommender):
                 loss = torch.tensor(0.0, device=self.device)
                 model.eval()
                 model_generator.train()
-                batch_ol = sample_batch_pairwise(self.data, ol_batch_size)
+                batch_ol = rt.sample_batch_pairwise(self.data, ol_batch_size)
                 u_idx_ol, i_idx_ol, j_idx_ol = batch_ol
                 u_idx_ol = torch.as_tensor(u_idx_ol, device=self.device, dtype=torch.long)
                 i_idx_ol = torch.as_tensor(i_idx_ol, device=self.device, dtype=torch.long)
@@ -204,16 +187,16 @@ class BOD(GraphRecommender):
 
                 A_weight_user_item_pos = model_generator(pos_user_emb_ol, pos_item_emb_ol)
                 A_weight_user_item_neg = model_generator(pos_user_emb_ol, neg_item_emb_ol)
-                bpr_loss_ol = bpr_loss_weight(pos_user_emb_ol, pos_item_emb_ol, neg_item_emb_ol,A_weight_user_item_pos,A_weight_user_item_neg)
+                bpr_loss_ol = rt.bpr_loss_weight(pos_user_emb_ol, pos_item_emb_ol, neg_item_emb_ol, A_weight_user_item_pos, A_weight_user_item_neg)
                 gw_real = torch.autograd.grad(bpr_loss_ol, model_parameters, retain_graph=True, create_graph=True)
 
                 A_weight_user_item = model_generator(user_emb_ol, item_emb_ol)                
-                alignment_syn_ol = alignment_loss_weight_1(user_emb_ol, item_emb_ol, A_weight_user_item)
+                alignment_syn_ol = rt.alignment_loss_weight_1(user_emb_ol, item_emb_ol, A_weight_user_item)
 
                 gw_syn = torch.autograd.grad(alignment_syn_ol, model_parameters, create_graph=True)
                 loss = match_loss(gw_real, gw_syn, 'ours')
 
-                loss_reg = l2_reg_loss(self.generator_reg, user_emb_ol, item_emb_ol)
+                loss_reg = rt.l2_reg_loss(self.generator_reg, user_emb_ol, item_emb_ol)
                 loss = loss + loss_reg
 
                 optimizer_generator.zero_grad(set_to_none=True)
@@ -389,7 +372,7 @@ class LGCN_Encoder(nn.Module):
         self.layers = n_layers
         self.norm_adj = data.norm_adj
         self.embedding_dict = self._init_model()
-        self.register_buffer('sparse_norm_adj', TorchGraphInterface.convert_sparse_mat_to_tensor(self.norm_adj))
+        self.register_buffer('sparse_norm_adj', rt.TorchGraphInterface.convert_sparse_mat_to_tensor(self.norm_adj))
 
     def _init_model(self):
         initializer = nn.init.xavier_uniform_
@@ -420,7 +403,7 @@ class NGCF_Encoder(nn.Module):
         self.layers = n_layers
         self.norm_adj = data.norm_adj
         self.embedding_dict,self.W = self._init_model()
-        self.register_buffer('sparse_norm_adj', TorchGraphInterface.convert_sparse_mat_to_tensor(self.norm_adj))
+        self.register_buffer('sparse_norm_adj', rt.TorchGraphInterface.convert_sparse_mat_to_tensor(self.norm_adj))
 
     def _init_model(self):
         initializer = nn.init.xavier_uniform_
@@ -460,7 +443,7 @@ class SimGCL_Encoder(nn.Module):
         self.n_layers = n_layers
         self.norm_adj = data.norm_adj
         self.embedding_dict = self._init_model()
-        self.register_buffer('sparse_norm_adj', TorchGraphInterface.convert_sparse_mat_to_tensor(self.norm_adj))
+        self.register_buffer('sparse_norm_adj', rt.TorchGraphInterface.convert_sparse_mat_to_tensor(self.norm_adj))
 
     def _init_model(self):
         initializer = nn.init.xavier_uniform_
@@ -490,8 +473,8 @@ class SimGCL_Encoder(nn.Module):
         i_idx = torch.unique(torch.tensor(idx[1], dtype=torch.long, device=device))
         user_view_1, item_view_1 = self.forward(perturbed=True)
         user_view_2, item_view_2 = self.forward(perturbed=True)
-        user_cl_loss = InfoNCE(user_view_1[u_idx], user_view_2[u_idx], 0.2)
-        item_cl_loss = InfoNCE(item_view_1[i_idx], item_view_2[i_idx], 0.2)
+        user_cl_loss = rt.InfoNCE(user_view_1[u_idx], user_view_2[u_idx], 0.2)
+        item_cl_loss = rt.InfoNCE(item_view_1[i_idx], item_view_2[i_idx], 0.2)
         return user_cl_loss + item_cl_loss
 
 class SGL_Encoder(nn.Module):
@@ -505,7 +488,7 @@ class SGL_Encoder(nn.Module):
         self.aug_type = aug_type
         self.norm_adj = data.norm_adj
         self.embedding_dict = self._init_model()
-        self.register_buffer('sparse_norm_adj', TorchGraphInterface.convert_sparse_mat_to_tensor(self.norm_adj))
+        self.register_buffer('sparse_norm_adj', rt.TorchGraphInterface.convert_sparse_mat_to_tensor(self.norm_adj))
 
     def _init_model(self):
         initializer = nn.init.xavier_uniform_
@@ -527,11 +510,11 @@ class SGL_Encoder(nn.Module):
     def random_graph_augment(self):
         dropped_mat = None
         if self.aug_type == 0:
-            dropped_mat = GraphAugmentor.node_dropout(self.data.interaction_mat, self.drop_rate)
+            dropped_mat = rt.GraphAugmentor.node_dropout(self.data.interaction_mat, self.drop_rate)
         elif self.aug_type == 1 or self.aug_type == 2:
-            dropped_mat = GraphAugmentor.edge_dropout(self.data.interaction_mat, self.drop_rate)
+            dropped_mat = rt.GraphAugmentor.edge_dropout(self.data.interaction_mat, self.drop_rate)
         dropped_mat = self.data.convert_to_laplacian_mat(dropped_mat)
-        return TorchGraphInterface.convert_sparse_mat_to_tensor(dropped_mat, device=self.sparse_norm_adj.device)
+        return rt.TorchGraphInterface.convert_sparse_mat_to_tensor(dropped_mat, device=self.sparse_norm_adj.device)
 
     def forward(self, perturbed_adj=None):
         ego_embeddings = torch.cat([self.embedding_dict['user_emb'], self.embedding_dict['item_emb']], 0)
@@ -558,7 +541,7 @@ class SGL_Encoder(nn.Module):
         user_view_2, item_view_2 = self.forward(perturbed_mat2)
         view1 = torch.cat((user_view_1[u_idx],item_view_1[i_idx]),0)
         view2 = torch.cat((user_view_2[u_idx],item_view_2[i_idx]),0)
-        return InfoNCE(view1,view2,self.temp)
+        return rt.InfoNCE(view1, view2, self.temp)
 
 
 class GraphGenerator_VAE(nn.Module):

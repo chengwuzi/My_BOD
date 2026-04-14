@@ -1,21 +1,14 @@
 import torch
 import torch.nn as nn
-from core_runtime import (
-    GraphRecommender,
-    OptionConf,
-    TorchGraphInterface,
-    bpr_loss,
-    l2_reg_loss,
-    next_batch_pairwise,
-)
+import core_runtime as rt
 import time
 # paper: LightGCN: Simplifying and Powering Graph Convolution Network for Recommendation. SIGIR'20
 
 
-class LightGCN(GraphRecommender):
+class LightGCN(rt.GraphRecommender):
     def __init__(self, conf, training_set, test_set):
         super(LightGCN, self).__init__(conf, training_set, test_set)
-        args = OptionConf(self.config['LightGCN'])
+        args = rt.OptionConf(self.config['LightGCN'])
         self.n_layers = int(args['-n_layer'])
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.model = LGCN_Encoder(self.data, self.emb_size, self.n_layers)
@@ -25,7 +18,7 @@ class LightGCN(GraphRecommender):
         optimizer = torch.optim.Adam(model.parameters(), lr=self.lRate)
         for epoch in range(self.maxEpoch):
             start_time = time.time()
-            for n, batch in enumerate(next_batch_pairwise(self.data, self.batch_size)):
+            for n, batch in enumerate(rt.next_batch_pairwise(self.data, self.batch_size)):
                 user_idx, pos_idx, neg_idx = batch
                 user_idx = torch.as_tensor(user_idx, device=self.device, dtype=torch.long)
                 pos_idx = torch.as_tensor(pos_idx, device=self.device, dtype=torch.long)
@@ -35,7 +28,7 @@ class LightGCN(GraphRecommender):
                 user_emb = rec_user_emb.index_select(0, user_idx)
                 pos_item_emb = rec_item_emb.index_select(0, pos_idx)
                 neg_item_emb = rec_item_emb.index_select(0, neg_idx)
-                batch_loss = bpr_loss(user_emb, pos_item_emb, neg_item_emb) + l2_reg_loss(self.reg, user_emb,pos_item_emb)
+                batch_loss = rt.bpr_loss(user_emb, pos_item_emb, neg_item_emb) + rt.l2_reg_loss(self.reg, user_emb, pos_item_emb)
                 # Backward and optimize
                 optimizer.zero_grad(set_to_none=True)
                 batch_loss.backward()
@@ -80,7 +73,7 @@ class LGCN_Encoder(nn.Module):
         self.layers = n_layers
         self.norm_adj = data.norm_adj
         self.embedding_dict = self._init_model()
-        self.register_buffer('sparse_norm_adj', TorchGraphInterface.convert_sparse_mat_to_tensor(self.norm_adj))
+        self.register_buffer('sparse_norm_adj', rt.TorchGraphInterface.convert_sparse_mat_to_tensor(self.norm_adj))
 
     def _init_model(self):
         initializer = nn.init.xavier_uniform_
