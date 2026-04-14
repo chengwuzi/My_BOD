@@ -641,3 +641,87 @@ trial.id=trial_0005
 trial.name=grid_0005
 trial.signature=1d33d7fe1ed1
 
+========================================================================================================================
+Time: 2026-04-14 15-34-07
+Model: LightGCN
+Dataset: iFashion_UB
+Training Set: /code/25-chenglong/My_BOD/My_BOD/dataset/iFashion_UB/train.txt
+Test Set: /code/25-chenglong/My_BOD/My_BOD/dataset/iFashion_UB/test.txt
+Best Epoch: 18
+Best Metrics: Recall@10:0.045463717904279194 | NDCG@10:0.05129829569449973 | Recall@20:0.07313952495943923 | NDCG@20:0.06279777092271412
+Configuration:
+LightGCN=-n_layer 1
+batch_size=1024
+dataset.name=iFashion_UB
+embbedding.size=64
+item.ranking=-topN 10,20
+learnRate=0.002
+model.name=LightGCN
+model.type=graph
+num.max.epoch=20
+output.setup=-dir ./results/
+reg.lambda=1e-05
+search.name=lightgcn_stage2_reg_lambda
+seed=2024
+test.set=./dataset/iFashion_UB/test.txt
+training.set=./dataset/iFashion_UB/train.txt
+trial.id=trial_0001
+trial.name=grid_0001
+trial.signature=0b039ddcca02
+
+========================================================================================================================
+Time: 2026-04-14 15-48-46
+Model: LightGCN
+Dataset: iFashion_UB
+Training Set: /code/25-chenglong/My_BOD/My_BOD/dataset/iFashion_UB/train.txt
+Test Set: /code/25-chenglong/My_BOD/My_BOD/dataset/iFashion_UB/test.txt
+Best Epoch: 19
+Best Metrics: Recall@10:0.04443146083334711 | NDCG@10:0.04967305063579398 | Recall@20:0.07158237585685716 | NDCG@20:0.06102599597062922
+Configuration:
+LightGCN=-n_layer 1
+batch_size=1024
+dataset.name=iFashion_UB
+embbedding.size=64
+item.ranking=-topN 10,20
+learnRate=0.002
+model.name=LightGCN
+model.type=graph
+num.max.epoch=20
+output.setup=-dir ./results/
+reg.lambda=0.0001
+search.name=lightgcn_stage2_reg_lambda
+seed=2024
+test.set=./dataset/iFashion_UB/test.txt
+training.set=./dataset/iFashion_UB/train.txt
+trial.id=trial_0002
+trial.name=grid_0002
+trial.signature=b85ce747a315
+
+========================================================================================================================
+Time: 2026-04-14 16-04-45
+Model: LightGCN
+Dataset: iFashion_UB
+Training Set: /code/25-chenglong/My_BOD/My_BOD/dataset/iFashion_UB/train.txt
+Test Set: /code/25-chenglong/My_BOD/My_BOD/dataset/iFashion_UB/test.txt
+Best Epoch: 17
+Best Metrics: Recall@10:0.00012719006970282384 | NDCG@10:0.0001446809513858984 | Recall@20:0.0002203202181016472 | NDCG@20:0.00018385151929955584
+Configuration:
+LightGCN=-n_layer 1
+batch_size=1024
+dataset.name=iFashion_UB
+embbedding.size=64
+item.ranking=-topN 10,20
+learnRate=0.002
+model.name=LightGCN
+model.type=graph
+num.max.epoch=20
+output.setup=-dir ./results/
+reg.lambda=0.001
+search.name=lightgcn_stage2_reg_lambda
+seed=2024
+test.set=./dataset/iFashion_UB/test.txt
+training.set=./dataset/iFashion_UB/train.txt
+trial.id=trial_0003
+trial.name=grid_0003
+trial.signature=9b57a65ce204
+
