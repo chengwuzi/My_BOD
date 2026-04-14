@@ -1,0 +1,23 @@
+{
+  "search_name": "lightgcn_stage1_learnrate",
+  "base_config": "conf/LightGCN.conf",
+  "output_dir": "results/search_runs/lightgcn_stage1_learnrate",
+  "resume": true,
+  "max_attempts": 3,
+  "timeout_sec": null,
+  "fixed_overrides": {
+    "seed": 2024,
+    "num.max.epoch": 20,
+    "batch_size": 1024,
+    "LightGCN.-n_layer": 1
+  },
+  "grid": {
+    "learnRate": [
+      0.0005,
+      0.001,
+      0.002,
+      0.003,
+      0.005
+    ]
+  }
+}
