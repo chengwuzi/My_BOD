@@ -2,15 +2,15 @@ from SELFRec import SELFRec
 from util.conf import ModelConf
 
 if __name__ == '__main__':
-    baseline = ['NCF','LightGCN','MF','NGCF','DirectAU']
-    graph_models = ['SGL', 'SimGCL']
+    baseline = ['LightGCN']
+    graph_models = []
     data_augmentation = ['BOD']
 
     print('Baseline Models:')
     print('   '.join(baseline))
     print('-' * 80)
     print('Graph-Based Models:')
-    print('   '.join(graph_models))
+    print('   '.join(graph_models) if graph_models else '(none)')
     print('-' * 80)
     print('Denoising Models:')
     print('   '.join(data_augmentation))
