@@ -8,6 +8,7 @@ import torch.nn.functional as F
 from base.torch_interface import TorchGraphInterface
 import numpy as np
 import time
+import os
 from data.augmentor import GraphAugmentor
 from data.ui_graph import Interaction
 
@@ -87,6 +88,7 @@ class BOD(GraphRecommender):
             exit(-1)
 
         self.model_generator = GraphGenerator_VAE(self.data, self.generator_emb_size)
+        self.export_batch_size = 65536
 
     def train(self):
         # Sparse graph propagation plus higher-order gradients is already memory-heavy.
@@ -216,17 +218,97 @@ class BOD(GraphRecommender):
             if epoch_iter == self.maxEpoch - 1:            
                 break
 
+        self.user_emb, self.item_emb = self.best_user_emb, self.best_item_emb
+        self._restore_best_generator()
+        self.export_training_ub_weights()
+
     def save(self):
         with torch.no_grad():
             best_user_emb, best_item_emb = self.model.forward()
             self.best_user_emb = best_user_emb.detach().cpu()
             self.best_item_emb = best_item_emb.detach().cpu()
+            self.best_generator_state = {
+                key: value.detach().cpu().clone()
+                for key, value in self.model_generator.state_dict().items()
+            }
 
     def predict(self, u):
         with torch.no_grad():
             u = self.data.get_user_id(u)
             score = torch.matmul(self.user_emb[u], self.item_emb.transpose(0, 1))
             return score.cpu().numpy()
+
+    def _restore_best_generator(self):
+        if not hasattr(self, 'best_generator_state'):
+            raise RuntimeError('Best generator state is unavailable. Please finish training before exporting weights.')
+        self.model_generator.load_state_dict(self.best_generator_state)
+        self.model_generator = self.model_generator.to(self.device)
+        self.model_generator.eval()
+
+    def _build_ub_weight_filename(self):
+        if self.config.contain('trial.signature'):
+            return self.config['trial.signature'] + '_ub_weights.txt'
+        return self.model_name + '_' + self.datasetname + '_best_epoch_' + str(self.bestPerformance['epoch']) + '_ub_weights.txt'
+
+    def export_training_ub_weights(self):
+        if self.bestPerformance is None:
+            raise RuntimeError('Best performance is unavailable. Cannot export U-B weights.')
+
+        export_dir = self.output['-dir']
+        os.makedirs(export_dir, exist_ok=True)
+        export_path = os.path.join(export_dir, self._build_ub_weight_filename())
+
+        export_user_emb = self.best_user_emb.to(self.device)
+        export_item_emb = self.best_item_emb.to(self.device)
+        model_generator = self.model_generator.to(self.device)
+        model_generator.eval()
+
+        seen_pairs = set()
+        batch_pairs = []
+        exported_count = 0
+
+        def flush_batch(handle, pairs):
+            nonlocal exported_count
+            if not pairs:
+                return
+            user_indices = torch.as_tensor(
+                [self.data.user[user_id] for user_id, _ in pairs],
+                device=self.device,
+                dtype=torch.long,
+            )
+            item_indices = torch.as_tensor(
+                [self.data.item[item_id] for _, item_id in pairs],
+                device=self.device,
+                dtype=torch.long,
+            )
+            with torch.no_grad():
+                batch_user_emb = export_user_emb.index_select(0, user_indices)
+                batch_item_emb = export_item_emb.index_select(0, item_indices)
+                weights = model_generator(batch_user_emb, batch_item_emb).view(-1).detach().cpu().tolist()
+
+            for (user_id, item_id), weight in zip(pairs, weights):
+                handle.write(f'{user_id} {item_id} {weight:.6f}\n')
+            exported_count += len(pairs)
+
+        with open(export_path, 'w', encoding='utf-8', newline='\n') as handle:
+            for user_id, item_id, _ in self.data.training_data:
+                pair = (user_id, item_id)
+                if pair in seen_pairs:
+                    continue
+                seen_pairs.add(pair)
+                batch_pairs.append(pair)
+                if len(batch_pairs) >= self.export_batch_size:
+                    flush_batch(handle, batch_pairs)
+                    batch_pairs = []
+            flush_batch(handle, batch_pairs)
+
+        print(
+            'Exported training U-B weights for best epoch',
+            self.bestPerformance['epoch'],
+            'to',
+            export_path,
+            f'({exported_count} edges).'
+        )
 
 
 class Matrix_Factorization(nn.Module):
