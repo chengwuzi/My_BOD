@@ -50,6 +50,10 @@ class BOD(rt.GraphRecommender):
         self.trainmodel = self.config['trainmodel']
         self.generator = self.config['generator']
         self.datasetname = self.config['dataset.name']
+        self.weight_mode = self.config['weight.mode'] if self.config.contain('weight.mode') else 'original'
+        self.config.config['weight.mode'] = self.weight_mode
+        if self.weight_mode not in {'original', 'per_sample'}:
+            raise ValueError(f"Unsupported weight.mode: {self.weight_mode}")
         args = rt.OptionConf(self.config['GM_AU'])
         self.generator_lr = float(args['-generator_lr'])
         self.generator_reg = float(args['-generator_reg'])
@@ -83,6 +87,10 @@ class BOD(rt.GraphRecommender):
 
         self.model_generator = GraphGenerator_VAE(self.data, self.generator_emb_size)
         self.export_batch_size = 65536
+
+    def print_model_info(self):
+        super(BOD, self).print_model_info()
+        print('Weight Mode:', self.weight_mode)
 
     def train(self):
         # Sparse graph propagation plus higher-order gradients is already memory-heavy.
@@ -124,8 +132,20 @@ class BOD(rt.GraphRecommender):
                         A_weight_inner_full_detach = model_generator(pos_user_emb_syn, pos_item_emb_syn)
                         A_weight_inner_full_neg_detach = model_generator(pos_user_emb_syn, neg_item_emb_syn)
                     
-                    bpr_inner = rt.bpr_loss_weight(pos_user_emb_syn, pos_item_emb_syn, neg_item_emb_syn, A_weight_inner_full_detach, A_weight_inner_full_neg_detach)
-                    alignment_inner = rt.alignment_loss_weight_1(pos_user_emb_syn, pos_item_emb_syn, A_weight_inner_full_detach)
+                    bpr_inner = rt.bpr_loss_weight(
+                        pos_user_emb_syn,
+                        pos_item_emb_syn,
+                        neg_item_emb_syn,
+                        A_weight_inner_full_detach,
+                        A_weight_inner_full_neg_detach,
+                        mode=self.weight_mode,
+                    )
+                    alignment_inner = rt.alignment_loss_weight_1(
+                        pos_user_emb_syn,
+                        pos_item_emb_syn,
+                        A_weight_inner_full_detach,
+                        mode=self.weight_mode,
+                    )
 
                     uniformity_inner = (
                         rt.uniformity_loss(pos_user_emb_syn) +
@@ -187,11 +207,23 @@ class BOD(rt.GraphRecommender):
 
                 A_weight_user_item_pos = model_generator(pos_user_emb_ol, pos_item_emb_ol)
                 A_weight_user_item_neg = model_generator(pos_user_emb_ol, neg_item_emb_ol)
-                bpr_loss_ol = rt.bpr_loss_weight(pos_user_emb_ol, pos_item_emb_ol, neg_item_emb_ol, A_weight_user_item_pos, A_weight_user_item_neg)
+                bpr_loss_ol = rt.bpr_loss_weight(
+                    pos_user_emb_ol,
+                    pos_item_emb_ol,
+                    neg_item_emb_ol,
+                    A_weight_user_item_pos,
+                    A_weight_user_item_neg,
+                    mode=self.weight_mode,
+                )
                 gw_real = torch.autograd.grad(bpr_loss_ol, model_parameters, retain_graph=True, create_graph=True)
 
                 A_weight_user_item = model_generator(user_emb_ol, item_emb_ol)                
-                alignment_syn_ol = rt.alignment_loss_weight_1(user_emb_ol, item_emb_ol, A_weight_user_item)
+                alignment_syn_ol = rt.alignment_loss_weight_1(
+                    user_emb_ol,
+                    item_emb_ol,
+                    A_weight_user_item,
+                    mode=self.weight_mode,
+                )
 
                 gw_syn = torch.autograd.grad(alignment_syn_ol, model_parameters, create_graph=True)
                 loss = match_loss(gw_real, gw_syn, 'ours')

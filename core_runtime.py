@@ -272,7 +272,12 @@ def bpr_loss(user_emb, pos_item_emb, neg_item_emb):
     return torch.mean(loss)
 
 
-def bpr_loss_weight(user_emb, pos_item_emb, neg_item_emb, weight_pos, weight_neg):
+def bpr_loss_weight(user_emb, pos_item_emb, neg_item_emb, weight_pos, weight_neg, mode='original'):
+    if mode == 'per_sample':
+        weight_pos = weight_pos.view(-1)
+        weight_neg = weight_neg.view(-1)
+    elif mode != 'original':
+        raise ValueError(f"Unsupported weight mode: {mode}")
     pos_score = weight_pos * torch.mul(user_emb, pos_item_emb).sum(dim=1)
     neg_score = weight_neg * torch.mul(user_emb, neg_item_emb).sum(dim=1)
     loss = -torch.log(10e-8 + torch.sigmoid(pos_score - neg_score))
@@ -287,7 +292,11 @@ def alignment_loss_weight(x, y, x1, y1, alpha=2):
     return (weight_norm * loss).mean()
 
 
-def alignment_loss_weight_1(x, y, weight, alpha=2):
+def alignment_loss_weight_1(x, y, weight, alpha=2, mode='original'):
+    if mode == 'per_sample':
+        weight = weight.view(-1)
+    elif mode != 'original':
+        raise ValueError(f"Unsupported weight mode: {mode}")
     x, y = F.normalize(x, dim=-1), F.normalize(y, dim=-1)
     loss = (x - y).norm(p=2, dim=1).pow(alpha)
     return (weight * loss).mean()
