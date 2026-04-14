@@ -1,0 +1,16 @@
+{
+  "search_name": "lightgcn_stage2_reg_lambda",
+  "base_config": "conf/LightGCN.conf",
+  "output_dir": "results/search_runs/lightgcn_stage2_reg_lambda",
+  "resume": true,
+  "max_attempts": 3,
+  "fixed_overrides": {
+    "num.max.epoch": 20,
+    "batch_size": 1024,
+    "learnRate": 0.002,
+    "LightGCN.-n_layer": 1
+  },
+  "grid": {
+    "reg.lambda": [1e-5, 1e-4, 1e-3, 1e-2]
+  }
+}
