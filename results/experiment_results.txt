@@ -727,6 +727,7 @@ trial.signature=9b57a65ce204
 
 ========================================================================================================================
 Time: 2026-04-14 21-43-05
+第一次导出权重矩阵-广播BUG原始逻辑
 Model: BOD
 Dataset: iFashion_UB
 Training Set: /code/25-chenglong/My_BOD/My_BOD/dataset/iFashion_UB/train.txt
@@ -751,4 +752,33 @@ seed=3407
 test.set=./dataset/iFashion_UB/test.txt
 training.set=./dataset/iFashion_UB/train.txt
 trainmodel=LightGCN
+
+========================================================================================================================
+Time: 2026-04-14 23-24-26
+第二次导出权重矩阵-一对一权重修正逻辑
+Model: BOD
+Dataset: iFashion_UB
+Training Set: /code/25-chenglong/My_BOD/My_BOD/dataset/iFashion_UB/train.txt
+Test Set: /code/25-chenglong/My_BOD/My_BOD/dataset/iFashion_UB/test.txt
+Best Epoch: 20
+Best Metrics: Recall@10:0.06440402196844257 | NDCG@10:0.07191450100092774 | Recall@20:0.10006109903971264 | NDCG@20:0.0863085019777662
+Configuration:
+GM_AU=-generator_lr 0.0005 -generator_reg 0.0001 -generator_emb_size 64 -outer_loop 1 -inner_loop 1 -outer_batch_size 128 -weight_bpr 1 -weight_alignment 1 -weight_uniformity 0.35
+LightGCN=-n_layer 1
+batch_size=256
+dataset.name=iFashion_UB
+embbedding.size=64
+generator=VAE
+item.ranking=-topN 10,20
+learnRate=0.001
+model.name=BOD
+model.type=graph
+num.max.epoch=30
+output.setup=-dir ./results/
+reg.lambda=0.0001
+seed=3407
+test.set=./dataset/iFashion_UB/test.txt
+training.set=./dataset/iFashion_UB/train.txt
+trainmodel=LightGCN
+weight.mode=per_sample
 
