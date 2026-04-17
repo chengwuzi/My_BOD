@@ -44,11 +44,14 @@ class ModelConf(object):
         if not os.path.exists(file):
             print('config file is not found!')
             raise IOError
-        with open(file) as f:
+        with open(file, encoding='utf-8-sig') as f:
             for ind, line in enumerate(f):
-                if line.strip() != '':
+                stripped = line.strip()
+                if stripped == '' or stripped.startswith('#'):
+                    continue
+                if stripped != '':
                     try:
-                        key, value = line.strip().split('=')
+                        key, value = stripped.split('=', 1)
                         self.config[key] = value
                     except ValueError:
                         print('config file is not in the correct format! Error Line:%d' % ind)
