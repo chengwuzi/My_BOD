@@ -49,8 +49,39 @@ class LightGCN(rt.GraphRecommender):
                 self.item_emb = self.item_emb.cpu()
                 torch.cuda.empty_cache()
         self.user_emb, self.item_emb = self.best_user_emb, self.best_item_emb
+        self.export_embeddings()
 
+    def export_embeddings(self):
+        import os
+        export_dir = self.output['-dir']
+        os.makedirs(export_dir, exist_ok=True)
+        
+        # Build filename prefix
+        if self.config.contain('trial.signature'):
+            prefix = self.config['trial.signature']
+        else:
+            dataset_name = self.config['dataset.name'] if self.config.contain('dataset.name') else 'unknown_dataset'
+            best_epoch = self.bestPerformance['epoch'] if hasattr(self, 'bestPerformance') and self.bestPerformance else 'final'
+            prefix = f"{self.model_name}_{dataset_name}_best_epoch_{best_epoch}"
 
+        user_emb_path = os.path.join(export_dir, f"{prefix}_user_emb.pt")
+        item_emb_path = os.path.join(export_dir, f"{prefix}_item_emb.pt")
+
+        # Create dictionaries mapping original ID to its corresponding embedding vector
+        user_emb_dict = {}
+        for row_idx, user_id in self.data.id2user.items():
+            user_emb_dict[user_id] = self.best_user_emb[row_idx].clone()
+
+        item_emb_dict = {}
+        for row_idx, item_id in self.data.id2item.items():
+            item_emb_dict[item_id] = self.best_item_emb[row_idx].clone()
+
+        # Save to .pt files
+        torch.save(user_emb_dict, user_emb_path)
+        torch.save(item_emb_dict, item_emb_path)
+
+        print(f"Exported user embeddings to {user_emb_path} ({len(user_emb_dict)} users)")
+        print(f"Exported item embeddings to {item_emb_path} ({len(item_emb_dict)} items)")
 
     def save(self):
         with torch.no_grad():
