@@ -5,7 +5,6 @@ import os.path
 import random
 import sys
 from collections import defaultdict
-from math import exp, sqrt
 from os import remove
 from os.path import abspath
 from re import split
@@ -14,16 +13,6 @@ from time import localtime, strftime, time
 import numpy as np
 import scipy.sparse as sp
 import torch
-import torch.nn.functional as F
-from numpy.linalg import norm
-
-try:
-    from numba import jit
-except ModuleNotFoundError:
-    def jit(*args, **kwargs):
-        def decorator(func):
-            return func
-        return decorator
 
 
 class ModelConf(object):
@@ -151,123 +140,6 @@ def next_batch_pairwise(data, batch_size):
         yield u_idx, i_idx, j_idx
 
 
-def sample_batch_pairwise(data, batch_size):
-    training_data = data.training_data
-    data_size = len(training_data)
-    idxs = [random.randint(0, data_size - 1) for i in range(batch_size)]
-    users = [training_data[idx][0] for idx in idxs]
-    items = [training_data[idx][1] for idx in idxs]
-
-    u_idx, i_idx, j_idx = [], [], []
-    item_list = list(data.item.keys())
-    for i, user in enumerate(users):
-        i_idx.append(data.item[items[i]])
-        u_idx.append(data.user[user])
-        neg_item = random.choice(item_list)
-        while neg_item in data.training_set_u[user]:
-            neg_item = random.choice(item_list)
-        j_idx.append(data.item[neg_item])
-    return u_idx, i_idx, j_idx
-
-
-def next_batch_pointwise(data, batch_size):
-    training_data = data.training_data[:]
-    data_size = len(training_data)
-    batch_id = 0
-    while batch_id < data_size:
-        if batch_id + batch_size <= data_size:
-            users = [training_data[idx][0] for idx in range(batch_id, batch_size + batch_id)]
-            items = [training_data[idx][1] for idx in range(batch_id, batch_size + batch_id)]
-            batch_id += batch_size
-        else:
-            users = [training_data[idx][0] for idx in range(batch_id, data_size)]
-            items = [training_data[idx][1] for idx in range(batch_id, data_size)]
-            batch_id = data_size
-        u_idx, i_idx, y = [], [], []
-        for i, user in enumerate(users):
-            i_idx.append(data.item[items[i]])
-            u_idx.append(data.user[user])
-            y.append(1)
-            for instance in range(4):
-                item_j = random.randint(0, data.item_num - 1)
-                while data.id2item[item_j] in data.training_set_u[user]:
-                    item_j = random.randint(0, data.item_num - 1)
-                u_idx.append(data.user[user])
-                i_idx.append(item_j)
-                y.append(0)
-        yield u_idx, i_idx, y
-
-
-def sample_batch_pointwise(data, batch_size):
-    training_data = data.training_data
-    data_size = len(training_data)
-    idxs = [random.randint(0, data_size - 1) for i in range(batch_size)]
-    users = [training_data[idx][0] for idx in idxs]
-    items = [training_data[idx][1] for idx in idxs]
-
-    u_idx, i_idx, y = [], [], []
-    for i, user in enumerate(users):
-        i_idx.append(data.item[items[i]])
-        u_idx.append(data.user[user])
-        y.append(1)
-        for instance in range(4):
-            item_j = random.randint(0, data.item_num - 1)
-            while data.id2item[item_j] in data.training_set_u[user]:
-                item_j = random.randint(0, data.item_num - 1)
-            u_idx.append(data.user[user])
-            i_idx.append(item_j)
-            y.append(0)
-    return u_idx, i_idx, y
-
-
-def sample_batch_pointwise_p(data, batch_size):
-    training_data = data.training_data
-    data_size = len(training_data)
-    idxs = [random.randint(0, data_size - 1) for i in range(batch_size)]
-    users = [training_data[idx][0] for idx in idxs]
-    items = [training_data[idx][1] for idx in idxs]
-
-    u_idx, i_idx, y = [], [], []
-    for i, user in enumerate(users):
-        i_idx.append(data.item[items[i]])
-        u_idx.append(data.user[user])
-        y.append(1)
-    return u_idx, i_idx, y
-
-
-def next_batch_pointwise_1(data, batch_size):
-    training_data = data.training_data
-    data_size = len(training_data)
-    batch_id = 0
-    while batch_id < data_size:
-        if batch_id + batch_size <= data_size:
-            users = [training_data[idx][0] for idx in range(batch_id, batch_size + batch_id)]
-            items = [training_data[idx][1] for idx in range(batch_id, batch_size + batch_id)]
-            batch_id += batch_size
-        else:
-            users = [training_data[idx][0] for idx in range(batch_id, data_size)]
-            items = [training_data[idx][1] for idx in range(batch_id, data_size)]
-            batch_id = data_size
-        u_idx, i_idx, y, pos_u_idx, pos_i_idx, neg_u_idx, neg_i_idx = [], [], [], [], [], [], []
-
-        for i, user in enumerate(users):
-            i_idx.append(data.item[items[i]])
-            u_idx.append(data.user[user])
-            pos_i_idx.append(data.item[items[i]])
-            pos_u_idx.append(data.user[user])
-            y.append(1)
-            for instance in range(1):
-                item_j = random.randint(0, data.item_num - 1)
-                while data.id2item[item_j] in data.training_set_u[user]:
-                    item_j = random.randint(0, data.item_num - 1)
-                u_idx.append(data.user[user])
-                i_idx.append(item_j)
-                neg_u_idx.append(data.user[user])
-                neg_i_idx.append(item_j)
-                y.append(0)
-        yield u_idx, i_idx, y, pos_u_idx, pos_i_idx, neg_u_idx, neg_i_idx
-
-
 def bpr_loss(user_emb, pos_item_emb, neg_item_emb):
     pos_score = torch.mul(user_emb, pos_item_emb).sum(dim=1)
     neg_score = torch.mul(user_emb, neg_item_emb).sum(dim=1)
@@ -275,206 +147,11 @@ def bpr_loss(user_emb, pos_item_emb, neg_item_emb):
     return torch.mean(loss)
 
 
-def bpr_loss_weight(user_emb, pos_item_emb, neg_item_emb, weight_pos, weight_neg, mode='original'):
-    if mode == 'per_sample':
-        weight_pos = weight_pos.view(-1)
-        weight_neg = weight_neg.view(-1)
-    elif mode != 'original':
-        raise ValueError(f"Unsupported weight mode: {mode}")
-    pos_score = weight_pos * torch.mul(user_emb, pos_item_emb).sum(dim=1)
-    neg_score = weight_neg * torch.mul(user_emb, neg_item_emb).sum(dim=1)
-    loss = -torch.log(10e-8 + torch.sigmoid(pos_score - neg_score))
-    return torch.mean(loss)
-
-
-def alignment_loss_weight(x, y, x1, y1, alpha=2):
-    x, y = F.normalize(x, dim=-1), F.normalize(y, dim=-1)
-    weight = torch.diag(torch.matmul(x1, y1.T))
-    weight_norm = ((weight - torch.min(weight)) / (torch.max(weight) - torch.min(weight)))
-    loss = (x - y).norm(p=2, dim=1).pow(alpha)
-    return (weight_norm * loss).mean()
-
-
-def alignment_loss_weight_1(x, y, weight, alpha=2, mode='original'):
-    if mode == 'per_sample':
-        weight = weight.view(-1)
-    elif mode != 'original':
-        raise ValueError(f"Unsupported weight mode: {mode}")
-    x, y = F.normalize(x, dim=-1), F.normalize(y, dim=-1)
-    loss = (x - y).norm(p=2, dim=1).pow(alpha)
-    return (weight * loss).mean()
-
-
-def alignment_loss(x, y, alpha=2):
-    x, y = F.normalize(x, dim=-1), F.normalize(y, dim=-1)
-    return (x - y).norm(p=2, dim=1).pow(alpha).mean()
-
-
-def uniformity_loss(x, t=2):
-    x = F.normalize(x, dim=-1)
-    return torch.pdist(x, p=2).pow(2).mul(-t).exp().mean().log()
-
-
 def l2_reg_loss(reg, *args):
     emb_loss = 0
     for emb in args:
         emb_loss += torch.norm(emb, p=2)
     return emb_loss * reg
-
-
-def batch_softmax_loss(user_emb, item_emb, temperature):
-    user_emb, item_emb = F.normalize(user_emb, dim=1), F.normalize(item_emb, dim=1)
-    pos_score = (user_emb * item_emb).sum(dim=-1)
-    pos_score = torch.exp(pos_score / temperature)
-    ttl_score = torch.matmul(user_emb, item_emb.transpose(0, 1))
-    ttl_score = torch.exp(ttl_score / temperature).sum(dim=1)
-    loss = -torch.log(pos_score / ttl_score)
-    return torch.mean(loss)
-
-
-def InfoNCE(view1, view2, temperature):
-    view1, view2 = F.normalize(view1, dim=1), F.normalize(view2, dim=1)
-    pos_score = (view1 * view2).sum(dim=-1)
-    pos_score = torch.exp(pos_score / temperature)
-    ttl_score = torch.matmul(view1, view2.transpose(0, 1))
-    ttl_score = torch.exp(ttl_score / temperature).sum(dim=1)
-    cl_loss = -torch.log(pos_score / ttl_score)
-    return torch.mean(cl_loss)
-
-
-def kl_divergence(p_logit, q_logit):
-    p = F.softmax(p_logit, dim=-1)
-    kl = torch.sum(p * (F.log_softmax(p_logit, dim=-1) - F.log_softmax(q_logit, dim=-1)), 1)
-    return torch.mean(kl)
-
-
-def js_divergence(p_logit, q_logit):
-    p = F.softmax(p_logit, dim=-1)
-    q = F.softmax(q_logit, dim=-1)
-    kl_p = torch.sum(p * (F.log_softmax(p_logit, dim=-1) - F.log_softmax(q_logit, dim=-1)), 1)
-    kl_q = torch.sum(q * (F.log_softmax(q_logit, dim=-1) - F.log_softmax(p_logit, dim=-1)), 1)
-    return torch.mean(kl_p + kl_q)
-
-
-def l1(x):
-    return norm(x, ord=1)
-
-
-def l2(x):
-    return norm(x)
-
-
-def common(x1, x2):
-    overlap = (x1 != 0) & (x2 != 0)
-    new_x1 = x1[overlap]
-    new_x2 = x2[overlap]
-    return new_x1, new_x2
-
-
-def cosine_sp(x1, x2):
-    total = 0
-    denom1 = 0
-    denom2 = 0
-    try:
-        for k in x1:
-            if k in x2:
-                total += x1[k] * x2[k]
-                denom1 += x1[k] ** 2
-                denom2 += x2[k] ** 2
-        return total / (sqrt(denom1) * sqrt(denom2))
-    except ZeroDivisionError:
-        return 0
-
-
-def euclidean_sp(x1, x2):
-    total = 0
-    try:
-        for k in x1:
-            if k in x2:
-                total += x1[k] ** 2 - x2[k] ** 2
-        return 1 / total
-    except ZeroDivisionError:
-        return 0
-
-
-def cosine(x1, x2):
-    total = x1.dot(x2)
-    denom = sqrt(x1.dot(x1) * x2.dot(x2))
-    try:
-        return total / denom
-    except ZeroDivisionError:
-        return 0
-
-
-def pearson_sp(x1, x2):
-    total = 0
-    denom1 = 0
-    denom2 = 0
-    overlapped = False
-    try:
-        mean1 = sum(x1.values()) / len(x1)
-        mean2 = sum(x2.values()) / len(x2)
-        for k in x1:
-            if k in x2:
-                total += (x1[k] - mean1) * (x2[k] - mean2)
-                denom1 += (x1[k] - mean1) ** 2
-                denom2 += (x2[k] - mean2) ** 2
-                overlapped = True
-        return total / (sqrt(denom1) * sqrt(denom2))
-    except ZeroDivisionError:
-        if overlapped:
-            return 1
-        return 0
-
-
-def euclidean(x1, x2):
-    new_x1, new_x2 = common(x1, x2)
-    diff = new_x1 - new_x2
-    denom = sqrt((diff.dot(diff)))
-    try:
-        return 1 / denom
-    except ZeroDivisionError:
-        return 0
-
-
-def pearson(x1, x2):
-    try:
-        mean_x1 = x1.sum() / len(x1)
-        mean_x2 = x2.sum() / len(x2)
-        new_x1 = x1 - mean_x1
-        new_x2 = x2 - mean_x2
-        total = new_x1.dot(new_x2)
-        denom = sqrt((new_x1.dot(new_x1)) * (new_x2.dot(new_x2)))
-        return total / denom
-    except ZeroDivisionError:
-        return 0
-
-
-def similarity(x1, x2, sim):
-    if sim == 'pcc':
-        return pearson_sp(x1, x2)
-    if sim == 'euclidean':
-        return euclidean_sp(x1, x2)
-    else:
-        return cosine_sp(x1, x2)
-
-
-def normalize(vec, maxVal, minVal):
-    if maxVal > minVal:
-        return (vec - minVal) / (maxVal - minVal)
-    elif maxVal == minVal:
-        return vec / maxVal
-    else:
-        print('error... maximum value is less than minimum value.')
-        raise ArithmeticError
-
-
-def sigmoid(val):
-    return 1 / (1 + exp(-val))
-
-
-def denormalize(vec, max_val, min_val):
-    return min_val + (vec - 0.01) * (max_val - min_val)
 
 
 def find_k_largest(K, candidates):
@@ -592,15 +269,6 @@ def format_ranking_evaluation(measure):
         lines.append('Recall:' + str(measure[n]['Recall']) + '\n')
         lines.append('NDCG:' + str(measure[n]['NDCG']) + '\n')
     return lines
-
-
-def rating_evaluation(res):
-    measure = []
-    mae = Metric.MAE(res)
-    measure.append('MAE:' + str(mae) + '\n')
-    rmse = Metric.RMSE(res)
-    measure.append('RMSE:' + str(rmse) + '\n')
-    return measure
 
 
 class FileIO(object):
@@ -849,42 +517,6 @@ class Interaction(Data, Graph):
                 vec[iid] = pair[1]
             m[self.user[u]] = vec
         return m
-
-
-class GraphAugmentor(object):
-    def __init__(self):
-        pass
-
-    @staticmethod
-    def node_dropout(sp_adj, drop_rate):
-        adj_shape = sp_adj.get_shape()
-        row_idx, col_idx = sp_adj.nonzero()
-        drop_user_idx = random.sample(range(adj_shape[0]), int(adj_shape[0] * drop_rate))
-        drop_item_idx = random.sample(range(adj_shape[1]), int(adj_shape[1] * drop_rate))
-        indicator_user = np.ones(adj_shape[0], dtype=np.float32)
-        indicator_item = np.ones(adj_shape[1], dtype=np.float32)
-        indicator_user[drop_user_idx] = 0.
-        indicator_item[drop_item_idx] = 0.
-        diag_indicator_user = sp.diags(indicator_user)
-        diag_indicator_item = sp.diags(indicator_item)
-        mat = sp.csr_matrix(
-            (np.ones_like(row_idx, dtype=np.float32), (row_idx, col_idx)),
-            shape=(adj_shape[0], adj_shape[1]),
-        )
-        mat_prime = diag_indicator_user.dot(mat).dot(diag_indicator_item)
-        return mat_prime
-
-    @staticmethod
-    def edge_dropout(sp_adj, drop_rate):
-        adj_shape = sp_adj.get_shape()
-        edge_count = sp_adj.count_nonzero()
-        row_idx, col_idx = sp_adj.nonzero()
-        keep_idx = random.sample(range(edge_count), int(edge_count * (1 - drop_rate)))
-        user_np = np.array(row_idx)[keep_idx]
-        item_np = np.array(col_idx)[keep_idx]
-        edges = np.ones_like(user_np, dtype=np.float32)
-        dropped_adj = sp.csr_matrix((edges, (user_np, item_np)), shape=adj_shape)
-        return dropped_adj
 
 
 class TorchGraphInterface(object):

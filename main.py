@@ -2,25 +2,16 @@ from SELFRec import SELFRec
 from core_runtime import ModelConf
 
 if __name__ == '__main__':
-    baseline = ['LightGCN']
-    graph_models = []
-    data_augmentation = ['BOD']
+    available_models = ['LightGCN']
 
-    print('Baseline Models:')
-    print('   '.join(baseline))
-    print('-' * 80)
-    print('Graph-Based Models:')
-    print('   '.join(graph_models) if graph_models else '(none)')
-    print('-' * 80)
-    print('Denoising Models:')
-    print('   '.join(data_augmentation))
-
+    print('Available Models:')
+    print('   '.join(available_models))
     print('=' * 80)
-    model = input('Please enter the model you want to run:')
+    model = input('Please enter the model you want to run [LightGCN]:').strip() or 'LightGCN'
     import time
 
     s = time.time()
-    if model in baseline or model in graph_models or model in data_augmentation:
+    if model in available_models:
         conf = ModelConf('./conf/' + model + '.conf')
     else:
         print('Wrong model name!')

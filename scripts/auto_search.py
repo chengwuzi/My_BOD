@@ -20,29 +20,21 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 EXAMPLE_SPEC = {
-    "search_name": "bod_stage1",
-    "base_config": "conf/BOD.conf",
-    "output_dir": "results/search_runs/bod_stage1",
+    "search_name": "lightgcn_stage1_learnrate",
+    "base_config": "conf/LightGCN.conf",
+    "output_dir": "results/search_runs/lightgcn_stage1_learnrate",
     "resume": True,
     "max_attempts": 3,
     "timeout_sec": None,
     "fixed_overrides": {
+        "seed": 2024,
         "num.max.epoch": 20,
-        "batch_size": 256
+        "batch_size": 1024,
+        "LightGCN.-n_layer": 1
     },
     "grid": {
-        "GM_AU.-weight_uniformity": [0.0, 0.05, 0.1],
-        "GM_AU.-generator_lr": [0.0001, 0.0005]
-    },
-    "trials": [
-        {
-            "name": "manual_alignment_boost",
-            "overrides": {
-                "GM_AU.-weight_alignment": 2,
-                "GM_AU.-weight_bpr": 1
-            }
-        }
-    ]
+        "learnRate": [0.0005, 0.001, 0.002, 0.003, 0.005]
+    }
 }
 
 
