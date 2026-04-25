@@ -21,7 +21,7 @@ if str(REPO_ROOT) not in sys.path:
 
 EXAMPLE_SPEC = {
     "search_name": "lightgcn_stage1_learnrate",
-    "base_config": "conf/LightGCN.conf",
+    "base_config": "conf/LightGCN_iFashion.conf",
     "output_dir": "results/search_runs/lightgcn_stage1_learnrate",
     "resume": True,
     "max_attempts": 3,

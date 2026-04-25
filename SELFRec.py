@@ -1,3 +1,5 @@
+import importlib
+
 from core_runtime import FileIO
 
 
@@ -21,8 +23,8 @@ class SELFRec(object):
         print('Reading data and preprocessing...')
 
     def execute(self):
-        # import the model module
-        import_str = 'from model.'+ self.config['model.type'] +'.' + self.config['model.name'] + ' import ' + self.config['model.name']
-        exec(import_str)
-        recommender = self.config['model.name'] + '(self.config,self.training_data,self.test_data,**self.kwargs)'
-        eval(recommender).execute()
+        module_name = 'model.' + self.config['model.type'] + '.' + self.config['model.name']
+        module = importlib.import_module(module_name)
+        model_cls = getattr(module, self.config['model.name'])
+        recommender = model_cls(self.config, self.training_data, self.test_data, **self.kwargs)
+        recommender.execute()

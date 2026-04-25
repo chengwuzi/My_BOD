@@ -5,7 +5,7 @@ This repository is a cleaned LightGCN-only recommendation project built on top o
 ## Scope
 
 - Model: `LightGCN`
-- Dataset: `iFashion_UB`
+- Datasets: `iFashion_UB`, `Youshu`, `NetEase`
 - Task: top-N recommendation on the user-bundle graph
 
 All BOD-specific code, configs, and search specs are removed from the active project scope.
@@ -22,7 +22,7 @@ torch>=1.7.0
 ## Project Layout
 
 ```text
-conf/LightGCN.conf          Main LightGCN configuration
+conf/LightGCN_*.conf        One LightGCN config per dataset
 model/graph/LightGCN.py     Model definition and training loop
 core_runtime.py             Shared runtime, data, metrics, and evaluation helpers
 SELFRec.py                  Dynamic model loading entry
@@ -35,9 +35,11 @@ results/                    Experiment outputs
 
 ## Usage
 
-1. Adjust `conf/LightGCN.conf` if needed.
+1. Adjust the dataset-specific config if needed:
+   `conf/LightGCN_iFashion.conf`, `conf/LightGCN_Youshu.conf`, or `conf/LightGCN_NetEase.conf`.
 2. Run `python main.py`.
-3. Enter `LightGCN`, or press Enter to use the default.
+3. Enter the dataset number:
+   `1` for `iFashion_UB`, `2` for `Youshu`, `3` for `NetEase`.
 
 ## Hyperparameter Search
 
@@ -47,7 +49,7 @@ Example:
 python scripts/auto_search.py --spec scripts/search_specs/lightgcn_stage1_learnrate.json
 ```
 
-The search runner generates temporary configs, launches trials, captures logs, and writes summaries under `results/search_runs/`.
+The current bundled search specs target the `iFashion_UB` configuration by default. Add separate specs for `Youshu` and `NetEase` when you start tuning those datasets.
 
 ## Notes
 

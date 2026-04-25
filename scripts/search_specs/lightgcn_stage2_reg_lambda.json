@@ -1,6 +1,6 @@
 {
   "search_name": "lightgcn_stage2_reg_lambda",
-  "base_config": "conf/LightGCN.conf",
+  "base_config": "conf/LightGCN_iFashion.conf",
   "output_dir": "results/search_runs/lightgcn_stage2_reg_lambda",
   "resume": true,
   "max_attempts": 3,
