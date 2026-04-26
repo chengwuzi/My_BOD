@@ -221,3 +221,75 @@ training.set=./dataset/iFashion_UB/train.txt
 trial.id=trial_0003
 trial.name=grid_0003
 trial.signature=9b57a65ce204
+========================================================================================================================
+Time: 2026-04-26 18-06-25
+Model: LightGCN
+Dataset: Youshu
+Training Set: /code/25-chenglong/My_BOD/My_BOD/dataset/Youshu/train.txt
+Test Set: /code/25-chenglong/My_BOD/My_BOD/dataset/Youshu/test.txt
+Best Epoch: 50
+Best Metrics: Recall@10:0.1816050158137627 | NDCG@10:0.15634118103709815 | Recall@20:0.26397585153122083 | NDCG@20:0.1805227028762876
+Configuration:
+LightGCN=-n_layer 1
+batch_size=1024
+dataset.name=Youshu
+embbedding.size=64
+item.ranking=-topN 10,20
+learnRate=0.002
+model.name=LightGCN
+model.type=graph
+num.max.epoch=50
+output.setup=-dir ./results/
+reg.lambda=0.00005
+seed=2024
+test.set=./dataset/Youshu/test.txt
+training.set=./dataset/Youshu/train.txt
+
+========================================================================================================================
+Time: 2026-04-26 18-16-08
+Model: LightGCN
+Dataset: NetEase
+Training Set: /code/25-chenglong/My_BOD/My_BOD/dataset/NetEase/train.txt
+Test Set: /code/25-chenglong/My_BOD/My_BOD/dataset/NetEase/test.txt
+Best Epoch: 27
+Best Metrics: Recall@10:0.03857383411140179 | NDCG@10:0.030434879356964564 | Recall@20:0.06354452091466149 | NDCG@20:0.039016589187670245
+Configuration:
+LightGCN=-n_layer 1
+batch_size=1024
+dataset.name=NetEase
+embbedding.size=64
+item.ranking=-topN 10,20
+learnRate=0.002
+model.name=LightGCN
+model.type=graph
+num.max.epoch=30
+output.setup=-dir ./results/
+reg.lambda=0.0001
+seed=2024
+test.set=./dataset/NetEase/test.txt
+training.set=./dataset/NetEase/train.txt
+
+========================================================================================================================
+Time: 2026-04-26 18-43-25
+Model: LightGCN
+Dataset: iFashion_UB
+Training Set: /code/25-chenglong/My_BOD/My_BOD/dataset/iFashion_UB/train.txt
+Test Set: /code/25-chenglong/My_BOD/My_BOD/dataset/iFashion_UB/test.txt
+Best Epoch: 19
+Best Metrics: Recall@10:0.04606358726093715 | NDCG@10:0.05066263179900818 | Recall@20:0.07380937778498856 | NDCG@20:0.06214142660359249
+Configuration:
+LightGCN=-n_layer 1
+batch_size=1024
+dataset.name=iFashion_UB
+embbedding.size=64
+item.ranking=-topN 10,20
+learnRate=0.002
+model.name=LightGCN
+model.type=graph
+num.max.epoch=20
+output.setup=-dir ./results/
+reg.lambda=0.00001
+seed=2024
+test.set=./dataset/iFashion_UB/test.txt
+training.set=./dataset/iFashion_UB/train.txt
+
