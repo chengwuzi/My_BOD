@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import core_runtime as rt
 import time
+from time import localtime, strftime
 # paper: LightGCN: Simplifying and Powering Graph Convolution Network for Recommendation. SIGIR'20
 
 
@@ -55,17 +56,10 @@ class LightGCN(rt.GraphRecommender):
         import os
         export_dir = self.output['-dir']
         os.makedirs(export_dir, exist_ok=True)
-        
-        # Build filename prefix
-        if self.config.contain('trial.signature'):
-            prefix = self.config['trial.signature']
-        else:
-            dataset_name = self.config['dataset.name'] if self.config.contain('dataset.name') else 'unknown_dataset'
-            best_epoch = self.bestPerformance['epoch'] if hasattr(self, 'bestPerformance') and self.bestPerformance else 'final'
-            prefix = f"{self.model_name}_{dataset_name}_best_epoch_{best_epoch}"
-
-        user_emb_path = os.path.join(export_dir, f"{prefix}_user_emb.pt")
-        item_emb_path = os.path.join(export_dir, f"{prefix}_item_emb.pt")
+        dataset_name = self.config['dataset.name'] if self.config.contain('dataset.name') else 'unknown_dataset'
+        export_stamp = strftime("%m%d%H%M", localtime())
+        user_emb_path = os.path.join(export_dir, f"{dataset_name}-user-{export_stamp}.pt")
+        item_emb_path = os.path.join(export_dir, f"{dataset_name}-bundle-{export_stamp}.pt")
 
         # Create dictionaries mapping original ID to its corresponding embedding vector
         user_emb_dict = {}
@@ -81,7 +75,7 @@ class LightGCN(rt.GraphRecommender):
         torch.save(item_emb_dict, item_emb_path)
 
         print(f"Exported user embeddings to {user_emb_path} ({len(user_emb_dict)} users)")
-        print(f"Exported item embeddings to {item_emb_path} ({len(item_emb_dict)} items)")
+        print(f"Exported bundle embeddings to {item_emb_path} ({len(item_emb_dict)} bundles)")
 
     def save(self):
         with torch.no_grad():
@@ -125,5 +119,3 @@ class LGCN_Encoder(nn.Module):
         user_all_embeddings = all_embeddings[:self.data.user_num]
         item_all_embeddings = all_embeddings[self.data.user_num:]
         return user_all_embeddings, item_all_embeddings
-
-
