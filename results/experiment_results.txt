@@ -293,3 +293,55 @@ seed=2024
 test.set=./dataset/iFashion_UB/test.txt
 training.set=./dataset/iFashion_UB/train.txt
 
+========================================================================================================================
+Time: 2026-10-26 19-19-04
+Model: LightGCN
+Dataset: MealRec+H
+Training Set: C:\Users\admin\PycharmProjects\My_BOD\dataset\MealRec+H\train.txt
+Validation Set: C:\Users\admin\PycharmProjects\My_BOD\dataset\MealRec+H\valid.txt
+Best Epoch: 58
+Best Metrics: Recall@10:0.12582411613584274 | NDCG@10:0.09031001447707167 | Recall@20:0.1785572224189635 | NDCG@20:0.10550286520324778
+Configuration:
+LightGCN=-n_layer 1
+batch_size=1024
+dataset.name=MealRec+H
+embbedding.size=64
+evaluation.split=validation
+final.test.set=./dataset/MealRec+H/test.txt
+item.ranking=-topN 10,20
+learnRate=0.0036
+model.name=LightGCN
+model.type=graph
+num.max.epoch=80
+output.setup=-dir ./results/
+reg.lambda=0.00022
+seed=2024
+test.set=./dataset/MealRec+H/valid.txt
+training.set=./dataset/MealRec+H/train.txt
+
+========================================================================================================================
+Time: 2026-10-26 19-22-00
+Model: LightGCN
+Dataset: MealRec+L
+Training Set: C:\Users\admin\PycharmProjects\My_BOD\dataset\MealRec+L\train.txt
+Validation Set: C:\Users\admin\PycharmProjects\My_BOD\dataset\MealRec+L\valid.txt
+Best Epoch: 37
+Best Metrics: Recall@10:0.0382530892683177 | NDCG@10:0.020171690865780686 | Recall@20:0.05606514185194388 | NDCG@20:0.025307584640284972
+Configuration:
+LightGCN=-n_layer 1
+batch_size=1024
+dataset.name=MealRec+L
+embbedding.size=64
+evaluation.split=validation
+final.test.set=./dataset/MealRec+L/test.txt
+item.ranking=-topN 10,20
+learnRate=0.0011
+model.name=LightGCN
+model.type=graph
+num.max.epoch=200
+output.setup=-dir ./results/
+reg.lambda=0.0000225
+seed=2024
+test.set=./dataset/MealRec+L/valid.txt
+training.set=./dataset/MealRec+L/train.txt
+
