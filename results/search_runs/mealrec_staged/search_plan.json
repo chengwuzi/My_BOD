@@ -1,0 +1,69 @@
+{
+  "datasets": [
+    {
+      "base_config": "D:\\PycharmProjects\\My_BOD\\conf\\LightGCN_MealRec+H.conf",
+      "dataset": "MealRec+H",
+      "final_test_evaluations": 1,
+      "initial": {
+        "learnRate": "0.002",
+        "reg.lambda": "0.00005"
+      },
+      "learning_rates": [
+        "0.0002",
+        "0.00050",
+        "0.0010",
+        "0.004",
+        "0.008",
+        "0.020"
+      ],
+      "regularization_stage_learning_rate": "best of baseline and six learning-rate trials",
+      "regularization_values": [
+        "0.000005",
+        "0.0000125",
+        "0.000025",
+        "0.00010",
+        "0.00020",
+        "0.00050"
+      ],
+      "training_trials": 13
+    },
+    {
+      "base_config": "D:\\PycharmProjects\\My_BOD\\conf\\LightGCN_MealRec+L.conf",
+      "dataset": "MealRec+L",
+      "final_test_evaluations": 1,
+      "initial": {
+        "learnRate": "0.002",
+        "reg.lambda": "0.0001"
+      },
+      "learning_rates": [
+        "0.0002",
+        "0.00050",
+        "0.0010",
+        "0.004",
+        "0.008",
+        "0.020"
+      ],
+      "regularization_stage_learning_rate": "best of baseline and six learning-rate trials",
+      "regularization_values": [
+        "0.00001",
+        "0.000025",
+        "0.00005",
+        "0.0002",
+        "0.0004",
+        "0.0010"
+      ],
+      "training_trials": 13
+    }
+  ],
+  "dry_run": true,
+  "multipliers": [
+    0.1,
+    0.25,
+    0.5,
+    2,
+    4,
+    10
+  ],
+  "selection_split": "validation",
+  "total_training_trials": 26
+}

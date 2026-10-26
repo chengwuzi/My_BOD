@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 from collections.abc import Iterable
 from pathlib import Path
 
@@ -23,6 +24,16 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=repo_root / "dataset",
         help="Root directory that contains dataset folders. Defaults to ./dataset",
+    )
+    parser.add_argument(
+        "--source-root",
+        type=Path,
+        help="Read original splits from this root instead of the output dataset directories.",
+    )
+    parser.add_argument(
+        "--separate-validation",
+        action="store_true",
+        help="Keep tune as valid.txt and test as test.txt; do not merge evaluation splits.",
     )
     parser.add_argument(
         "--weight",
@@ -132,12 +143,63 @@ def convert_dataset(dataset_dir: Path, weight: int) -> dict[str, int]:
     return result
 
 
+def convert_separate_splits(source_dir: Path, output_dir: Path, weight: int = 1) -> dict:
+    """Preserve source partitions and report cold entities excluded from evaluation."""
+    if weight <= 0:
+        raise ValueError("Edge weight must be positive.")
+    filenames = {
+        "train": "user_bundle_train.txt",
+        "valid": "user_bundle_tune.txt",
+        "test": "user_bundle_test.txt",
+    }
+    splits = {
+        name: deduplicate_preserve_order(read_pairs(source_dir / filename))
+        for name, filename in filenames.items()
+    }
+    for left, right in (("train", "valid"), ("train", "test"), ("valid", "test")):
+        overlap = set(splits[left]) & set(splits[right])
+        if overlap:
+            raise ValueError(f"{source_dir}: {left}/{right} overlap contains {len(overlap)} interactions.")
+
+    prepared = {"train": splits["train"]}
+    report = {"source_dir": str(source_dir.resolve()), "protocol": "separate_validation", "splits": {}}
+    for name, pairs in splits.items():
+        unseen_users, unseen_bundles = validate_test_pairs(splits["train"], pairs)
+        kept, dropped = filter_test_pairs_against_train(splits["train"], pairs)
+        if not kept:
+            raise ValueError(f"{source_dir}: no {name} interactions remain after filtering cold entities.")
+        prepared[name] = kept
+        report["splits"][name] = {
+            "raw_pairs": len(pairs), "kept_pairs": len(kept), "dropped_pairs": dropped,
+            "unseen_users": len(unseen_users), "unseen_bundles": len(unseen_bundles),
+            "users": len({u for u, _ in kept}), "bundles": len({b for _, b in kept}),
+        }
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    for name, pairs in prepared.items():
+        write_graph_file(output_dir / f"{name}.txt", pairs, weight)
+    write_graph_file(output_dir / "ratings.txt", [*prepared["train"], *prepared["valid"], *prepared["test"]], weight)
+    with (output_dir / "preparation.json").open("w", encoding="utf-8") as handle:
+        json.dump(report, handle, ensure_ascii=False, indent=2)
+        handle.write("\n")
+    return report
+
+
 def main() -> None:
     args = parse_args()
     dataset_root = args.dataset_root
 
     for dataset_name in args.datasets:
         dataset_dir = dataset_root / dataset_name
+        if args.separate_validation:
+            source_dir = (args.source_root or dataset_root) / dataset_name
+            report = convert_separate_splits(source_dir, dataset_dir, args.weight)
+            print(f"Converted {dataset_name}: separate train/valid/test in {dataset_dir}")
+            for name, stats in report["splits"].items():
+                print(f"  {name}: {stats['kept_pairs']} kept, {stats['dropped_pairs']} dropped (unseen entities)")
+            continue
+        if args.source_root is not None:
+            raise ValueError("--source-root requires --separate-validation.")
         if not dataset_dir.exists():
             raise FileNotFoundError(f"Dataset directory is not found: {dataset_dir}")
 

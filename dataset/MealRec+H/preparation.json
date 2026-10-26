@@ -1,0 +1,33 @@
+{
+  "source_dir": "D:\\PycharmProjects\\My_BOD\\Raw_Dataset\\MealRec+H",
+  "protocol": "separate_validation",
+  "splits": {
+    "train": {
+      "raw_pairs": 37413,
+      "kept_pairs": 37413,
+      "dropped_pairs": 0,
+      "unseen_users": 0,
+      "unseen_bundles": 0,
+      "users": 1575,
+      "bundles": 3810
+    },
+    "valid": {
+      "raw_pairs": 4677,
+      "kept_pairs": 4668,
+      "dropped_pairs": 9,
+      "unseen_users": 0,
+      "unseen_bundles": 6,
+      "users": 1130,
+      "bundles": 2326
+    },
+    "test": {
+      "raw_pairs": 4677,
+      "kept_pairs": 4673,
+      "dropped_pairs": 4,
+      "unseen_users": 0,
+      "unseen_bundles": 3,
+      "users": 1114,
+      "bundles": 2344
+    }
+  }
+}

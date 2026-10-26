@@ -6,6 +6,7 @@ import hashlib
 import importlib
 import itertools
 import json
+import math
 import subprocess
 import sys
 import time
@@ -110,7 +111,7 @@ def read_conf_file(path: Path) -> OrderedDict[str, str]:
     with path.open("r", encoding="utf-8-sig") as f:
         for raw_line in f:
             line = raw_line.strip()
-            if not line:
+            if not line or line.startswith("#"):
                 continue
             key, value = line.split("=", 1)
             config[key] = value
@@ -201,6 +202,44 @@ def signature_for_overrides(overrides: dict[str, Any]) -> str:
     return hashlib.sha1(normalized.encode("utf-8")).hexdigest()[:12]
 
 
+def file_digest(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def read_summary_records(path: Path) -> list[dict[str, Any]]:
+    records = []
+    if path.exists():
+        for line in path.read_text(encoding="utf-8").splitlines():
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError:
+                continue  # A process interruption may leave a partial last record.
+            if isinstance(record, dict):
+                records.append(record)
+    return records
+
+
+def completed_records(path: Path, require_embeddings: bool = False) -> dict[str, dict[str, Any]]:
+    completed = {}
+    for record in read_summary_records(path):
+        signature = record.get("signature")
+        if not signature:
+            continue
+        completed.pop(signature, None)
+        if record.get("status") != "success":
+            continue
+        if require_embeddings:
+            paths = record.get("embedding_paths", {})
+            if not all(paths.get(kind) and Path(paths[kind]).is_file() for kind in ("user", "bundle")):
+                continue
+        completed[signature] = record
+    return completed
+
+
 def build_trials(spec: dict[str, Any]) -> list[dict[str, Any]]:
     fixed_overrides = dict(spec.get("fixed_overrides", {}))
     trials: list[dict[str, Any]] = []
@@ -242,40 +281,25 @@ def build_trials(spec: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def load_completed_signatures(summary_jsonl: Path) -> set[str]:
-    signatures: set[str] = set()
-    if not summary_jsonl.exists():
-        return signatures
-    with summary_jsonl.open("r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                record = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            signature = record.get("signature")
-            status = record.get("status")
-            if signature and status in {"success", "failed", "timeout", "skipped"}:
-                signatures.add(signature)
-    return signatures
+    return set(completed_records(summary_jsonl))
 
 
 def append_jsonl(path: Path, record: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists() and path.stat().st_size:
+        with path.open("rb") as handle:
+            handle.seek(-1, 2)
+            needs_newline = handle.read(1) != b"\n"
+    else:
+        needs_newline = False
     with path.open("a", encoding="utf-8") as f:
+        if needs_newline:
+            f.write("\n")
         f.write(json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n")
 
 
 def rebuild_summary_csv(summary_jsonl: Path, summary_csv: Path) -> None:
-    rows: list[dict[str, Any]] = []
-    if summary_jsonl.exists():
-        with summary_jsonl.open("r", encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                rows.append(json.loads(line))
+    rows = read_summary_records(summary_jsonl)
     fieldnames = [
         "search_name",
         "trial_id",
@@ -283,6 +307,8 @@ def rebuild_summary_csv(summary_jsonl: Path, summary_csv: Path) -> None:
         "status",
         "model",
         "signature",
+        "learnRate",
+        "reg.lambda",
         "best_epoch",
         "recall@10",
         "ndcg@10",
@@ -308,6 +334,8 @@ def rebuild_summary_csv(summary_jsonl: Path, summary_csv: Path) -> None:
                     "status": row.get("status"),
                     "model": row.get("model"),
                     "signature": row.get("signature"),
+                    "learnRate": row.get("config", {}).get("learnRate"),
+                    "reg.lambda": row.get("config", {}).get("reg.lambda"),
                     "best_epoch": row.get("best_epoch"),
                     "recall@10": row.get("metrics", {}).get("10", {}).get("Recall"),
                     "ndcg@10": row.get("metrics", {}).get("10", {}).get("NDCG"),
@@ -333,6 +361,7 @@ def run_trial_subprocess(
 ) -> tuple[int | None, dict[str, Any]]:
     command = [
         sys.executable,
+        "-u",
         str(Path(__file__).resolve()),
         "--run-trial",
         "--config",
@@ -384,7 +413,7 @@ def run_trial_subprocess(
         result_record = load_json(result_json)
     else:
         result_record = {
-            "status": "failed" if returncode else "success",
+            "status": "failed",
             "returncode": returncode,
             "duration_sec": round(duration_sec, 3),
             "error_type": "MissingResultFile",
@@ -392,6 +421,8 @@ def run_trial_subprocess(
         }
         dump_json(result_json, result_record)
 
+    if returncode and result_record.get("status") == "success":
+        result_record.update(status="failed", error_type="NonZeroExit", error=f"Child exited with {returncode}.")
     result_record["returncode"] = returncode
     result_record["duration_sec"] = round(duration_sec, 3)
     result_record["attempt"] = attempt_index
@@ -400,11 +431,11 @@ def run_trial_subprocess(
 
 
 def execute_trial(config_path: Path, result_json: Path) -> int:
-    from SELFRec import SELFRec
-    from core_runtime import ModelConf
-
     start_time = time.time()
     try:
+        from SELFRec import SELFRec
+        from core_runtime import ModelConf
+
         conf = ModelConf(str(config_path))
         loader = SELFRec(conf)
         module = importlib.import_module(f"model.{conf['model.type']}.{conf['model.name']}")
@@ -419,12 +450,15 @@ def execute_trial(config_path: Path, result_json: Path) -> int:
             raw_metrics = best.get("metrics", {})
             for top_n, metric_dict in raw_metrics.items():
                 metrics[str(top_n)] = metric_dict
+        if not metrics or any(not math.isfinite(float(value)) for values in metrics.values() for value in values.values()):
+            raise ValueError("Training did not produce finite selection metrics.")
         payload = {
             "status": "success",
             "model": conf["model.name"],
             "config_path": str(config_path),
             "best_epoch": best_epoch,
             "metrics": metrics,
+            "embedding_paths": getattr(model, "embedding_paths", {}),
             "duration_sec": round(time.time() - start_time, 3),
         }
         dump_json(result_json, payload)
@@ -467,7 +501,18 @@ def run_search(spec_path: Path, dry_run: bool) -> int:
     if not trials:
         raise ValueError("No trials were produced. Please provide 'grid' and/or 'trials' in the search spec.")
 
-    completed_signatures = load_completed_signatures(summary_jsonl) if resume else set()
+    previous = completed_records(summary_jsonl, require_embeddings=bool(spec.get("isolate_outputs"))) if resume else {}
+    data_digests = {
+        key: file_digest(to_repo_path(base_config[key])) if to_repo_path(base_config[key]).is_file() else "missing"
+        for key in ("training.set", "test.set")
+    }
+    model_file = REPO_ROOT / "model" / base_config["model.type"] / f"{base_config['model.name']}.py"
+    code_digests = {
+        str(path.relative_to(REPO_ROOT)): file_digest(path)
+        for path in (REPO_ROOT / "core_runtime.py", REPO_ROOT / "SELFRec.py", model_file)
+        if path.is_file()
+    }
+    current_records = []
     print(f"Search Name: {search_name}")
     print(f"Base Config: {base_config_path}")
     print(f"Output Dir: {output_dir}")
@@ -479,9 +524,23 @@ def run_search(spec_path: Path, dry_run: bool) -> int:
 
     for idx, trial in enumerate(trials, start=1):
         overrides = trial["overrides"]
-        signature = signature_for_overrides(overrides)
         trial_id = f"trial_{idx:04d}"
         trial_name = safe_name(trial["name"])
+        config = apply_overrides(base_config, overrides)
+        if spec.get("isolate_outputs"):
+            config = apply_overrides(config, {"output.setup.-dir": str(output_dir / "artifacts" / f"{trial_id}_{trial_name}")})
+        # Include the effective configuration and input contents, not just overrides.
+        trial_digests = {
+            key: data_digests[key] if config[key] == base_config[key] else (
+                file_digest(to_repo_path(config[key])) if to_repo_path(config[key]).is_file() else "missing"
+            )
+            for key in data_digests
+        }
+        signature = signature_for_overrides({"config": config, "data": trial_digests, "code": code_digests})
+        if spec.get("isolate_outputs"):
+            config = apply_overrides(config, {
+                "output.setup.-dir": str(output_dir / "artifacts" / f"{trial_id}_{trial_name}" / signature)
+            })
         config_path = configs_dir / f"{trial_id}_{trial_name}.conf"
         log_path = logs_dir / f"{trial_id}_{trial_name}.log"
         result_json = trial_results_dir / f"{trial_id}_{trial_name}.json"
@@ -491,15 +550,16 @@ def run_search(spec_path: Path, dry_run: bool) -> int:
             "trial.name": trial_name,
             "trial.signature": signature,
         }
-        config = apply_overrides(base_config, overrides, metadata=metadata)
+        config = apply_overrides(config, {}, metadata=metadata)
         write_conf_file(config_path, config)
 
         print(f"[{idx}/{len(trials)}] {trial_id} | {trial['display_name']}")
         print(f"  signature: {signature}")
         print(f"  config: {config_path}")
 
-        if resume and signature in completed_signatures:
+        if resume and signature in previous:
             print("  skipped: already present in previous summary")
+            current_records.append(previous[signature])
             continue
 
         if dry_run:
@@ -529,7 +589,7 @@ def run_search(spec_path: Path, dry_run: bool) -> int:
                     "error": trial_result.get("error"),
                 }
             )
-            if trial_result.get("status") != "failed":
+            if trial_result.get("status") == "success":
                 break
             if attempt_index < max_attempts:
                 print(
@@ -556,11 +616,15 @@ def run_search(spec_path: Path, dry_run: bool) -> int:
             "error_type": trial_result.get("error_type"),
             "error": trial_result.get("error"),
             "overrides": overrides,
+            "config": dict(config),
+            "embedding_paths": trial_result.get("embedding_paths", {}),
             "attempt_count": len(attempt_records),
             "attempts": attempt_records,
         }
         append_jsonl(summary_jsonl, record)
-        completed_signatures.add(signature)
+        if record["status"] == "success":
+            previous[signature] = record
+        current_records.append(record)
         rebuild_summary_csv(summary_jsonl, summary_csv)
 
         if record["status"] == "success":
@@ -582,10 +646,11 @@ def run_search(spec_path: Path, dry_run: bool) -> int:
 
     if not dry_run:
         rebuild_summary_csv(summary_jsonl, summary_csv)
+        dump_json(output_dir / "run_results.json", {"trials": current_records})
         print("-" * 80)
         print(f"Search finished. Summary JSONL: {summary_jsonl}")
         print(f"Search finished. Summary CSV:   {summary_csv}")
-    return 0
+    return int(any(record["status"] != "success" for record in current_records))
 
 
 def main() -> int:
@@ -599,7 +664,11 @@ def main() -> int:
         return execute_trial(Path(args.config), Path(args.result_json))
     if not args.spec:
         raise SystemExit("Please provide --spec path/to/search.json or use --print-example")
-    return run_search(to_repo_path(args.spec), args.dry_run)
+    spec_path = to_repo_path(args.spec)
+    if load_json(spec_path).get("mode") == "staged":
+        from scripts.staged_search import run_staged_search
+        return run_staged_search(spec_path, args.dry_run)
+    return run_search(spec_path, args.dry_run)
 
 
 if __name__ == "__main__":

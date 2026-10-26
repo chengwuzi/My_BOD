@@ -8,13 +8,14 @@ if __name__ == '__main__':
         '1': ('iFashion_UB', './conf/LightGCN_iFashion.conf'),
         '2': ('Youshu', './conf/LightGCN_Youshu.conf'),
         '3': ('NetEase', './conf/LightGCN_NetEase.conf'),
+        '4': ('MealRec+H', './conf/LightGCN_MealRec+H.conf'),
+        '5': ('MealRec+L', './conf/LightGCN_MealRec+L.conf'),
     }
 
     print('Model: LightGCN')
     print('Available Datasets:')
-    print('1. iFashion_UB')
-    print('2. Youshu')
-    print('3. NetEase')
+    for number, (name, _) in dataset_configs.items():
+        print(f'{number}. {name}')
     print('=' * 80)
     dataset_choice = input('Please enter the dataset number [1]:').strip() or '1'
 

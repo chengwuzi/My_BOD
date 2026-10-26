@@ -73,6 +73,10 @@ class LightGCN(rt.GraphRecommender):
         # Save to .pt files
         torch.save(user_emb_dict, user_emb_path)
         torch.save(item_emb_dict, item_emb_path)
+        self.embedding_paths = {
+            'user': os.path.abspath(user_emb_path),
+            'bundle': os.path.abspath(item_emb_path),
+        }
 
         print(f"Exported user embeddings to {user_emb_path} ({len(user_emb_dict)} users)")
         print(f"Exported bundle embeddings to {item_emb_path} ({len(item_emb_dict)} bundles)")

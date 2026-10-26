@@ -570,7 +570,8 @@ class Recommender(object):
     def print_model_info(self):
         print('Model:', self.config['model.name'])
         print('Training Set:', abspath(self.config['training.set']))
-        print('Test Set:', abspath(self.config['test.set']))
+        evaluation_split = self.config['evaluation.split'] if self.config.contain('evaluation.split') else 'test'
+        print(evaluation_split.capitalize() + ' Set:', abspath(self.config['test.set']))
         print('Embedding Dimension:', self.emb_size)
         print('Maximum Epoch:', self.maxEpoch)
         print('Learning Rate:', self.lRate)
@@ -613,7 +614,7 @@ class Recommender(object):
         self.build()
         print('Training Model...')
         self.train()
-        print('Testing...')
+        print('Validating...' if self.config.contain('evaluation.split') and self.config['evaluation.split'] == 'validation' else 'Testing...')
         rec_list = self.test()
         print('Evaluating...')
         self.evaluate(rec_list)
@@ -631,7 +632,8 @@ class GraphRecommender(Recommender):
     def print_model_info(self):
         super(GraphRecommender, self).print_model_info()
         print('Training Set Size: (user number: %d, item number %d, interaction number: %d)' % (self.data.training_size()))
-        print('Test Set Size: (user number: %d, item number %d, interaction number: %d)' % (self.data.test_size()))
+        evaluation_split = self.config['evaluation.split'] if self.config.contain('evaluation.split') else 'test'
+        print((evaluation_split.capitalize() + ' Set Size: (user number: %d, item number %d, interaction number: %d)') % self.data.test_size())
         print('=' * 80)
 
     def build(self):
@@ -691,7 +693,8 @@ class GraphRecommender(Recommender):
         record.append('Model: ' + self.model_name + '\n')
         record.append('Dataset: ' + self.config['dataset.name'] + '\n')
         record.append('Training Set: ' + abspath(self.config['training.set']) + '\n')
-        record.append('Test Set: ' + abspath(self.config['test.set']) + '\n')
+        evaluation_split = self.config['evaluation.split'] if self.config.contain('evaluation.split') else 'test'
+        record.append(evaluation_split.capitalize() + ' Set: ' + abspath(self.config['test.set']) + '\n')
         record.append('Best Epoch: ' + str(self.bestPerformance['epoch']) + '\n')
         record.append('Best Metrics: ' + self._format_performance_summary(self.bestPerformance['metrics']) + '\n')
         record.append('Configuration:\n')
