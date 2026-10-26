@@ -22,9 +22,22 @@ python scripts/prepare_multicbr_datasets.py MealRec+H MealRec+L --source-root Ra
 
 已有数据集仍可使用转换脚本原来的默认模式（合并 tune/test）；新的 MealRec 调参流程应使用上述独立验证集模式。
 
-## 当前一轮：围绕首轮最佳参数细调
+## 当前默认配置：两轮搜索后锁定
 
-两份默认配置已更新为首轮验证集选出的参数，H 的训练上限延长至 80 轮，L 保持 200 轮：
+两份默认配置采用第二轮验证集选出的最佳参数：
+
+| 数据集 | learnRate | reg.lambda | 最大 epoch | 已选最佳轮次 |
+|---|---|---|---|---|
+| MealRec+H | 0.0036 | 0.00022 | 80 | 58 |
+| MealRec+L | 0.0011 | 0.0000225 | 200 | 37 |
+
+层数 1、维度 64、batch=1024、seed=2024 保持不变。最佳轮次是已有训练中验证集选中的 checkpoint，不替代最大训练轮数。`main.py` 的选项 4/5 使用这两份默认配置进行单次训练。
+
+两轮搜索规格分别引用 `conf/search_baselines/` 内冻结的起始配置。因此更新默认配置不会改变旧搜索范围或覆盖已有实验。本轮选定的四个向量继续使用服务器 `results/search_runs/mealrec_finetune/` 下各数据集的 `best_embeddings/` 产物，无需为更新配置重跑训练。
+
+## 已完成第二轮：围绕首轮最佳参数细调
+
+本轮起点为首轮最佳参数，H 的上限为 80 轮，L 为 200 轮；起点已冻结在 `conf/search_baselines/*_finetune.conf`：
 
 | 数据集 | 初始学习率 | 初始正则 | 最大 epoch | 传播层数 |
 |---|---|---|---|---|
@@ -50,7 +63,7 @@ python scripts/auto_search.py --spec scripts/search_specs/mealrec_finetune.json 
 python scripts/auto_search.py --spec scripts/search_specs/mealrec_finetune.json
 ```
 
-本轮输出独立存放在 `results/search_runs/mealrec_finetune/`，不会覆盖首轮 `mealrec_staged/` 的结果和向量。最佳汇总为 `mealrec_finetune/best_results.json`，各数据集最终向量仍位于各自 `best_embeddings/` 下。继续使用验证集选优、最终测试集评估和断点续跑逻辑。
+本轮输出独立存放在 `results/search_runs/mealrec_finetune/`，不会覆盖首轮 `mealrec_staged/` 的结果和向量。最佳汇总为 `mealrec_finetune/best_results.json`，各数据集最终向量仍位于各自 `best_embeddings/` 下。使用验证集选优、最终测试集评估和断点续跑逻辑。以上命令用于复查已完成的第二轮。
 
 ## 已完成首轮：较大范围分阶段搜索
 
@@ -89,7 +102,7 @@ MealRec 配置中的 `test.set` 兼容现有模型接口，实际指向 `valid.t
 
 ## 结果与断点续跑
 
-首轮输出目录为 `results/search_runs/mealrec_staged/`，当前细调目录为 `results/search_runs/mealrec_finetune/`。两个目录内部结构一致，数据集分别位于 `MealRec_H/`、`MealRec_L/`：
+首轮输出目录为 `results/search_runs/mealrec_staged/`，第二轮目录为 `results/search_runs/mealrec_finetune/`。两个目录内部结构一致，数据集分别位于 `MealRec_H/`、`MealRec_L/`：
 
 - `00_initial/`、`01_learnRate/`、`02_reg_lambda/`：实验各自的配置、日志、向量和 JSONL/CSV 汇总；CSV 包含学习率、正则、最佳轮次及验证指标。
 - `best.conf`：验证集选出的最佳配置，仍然使用验证集作为 `test.set`。

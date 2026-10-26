@@ -6,7 +6,7 @@
   "timeout_sec": null,
   "multipliers": [0.75, 0.9, 1.1, 1.25],
   "datasets": [
-    {"base_config": "conf/LightGCN_MealRec+H.conf"},
-    {"base_config": "conf/LightGCN_MealRec+L.conf"}
+    {"base_config": "conf/search_baselines/LightGCN_MealRec+H_finetune.conf"},
+    {"base_config": "conf/search_baselines/LightGCN_MealRec+L_finetune.conf"}
   ]
 }
