@@ -1,0 +1,12 @@
+{
+  "mode": "staged",
+  "output_dir": "results/search_runs/mealrec_finetune",
+  "resume": true,
+  "max_attempts": 3,
+  "timeout_sec": null,
+  "multipliers": [0.75, 0.9, 1.1, 1.25],
+  "datasets": [
+    {"base_config": "conf/LightGCN_MealRec+H.conf"},
+    {"base_config": "conf/LightGCN_MealRec+L.conf"}
+  ]
+}

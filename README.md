@@ -22,7 +22,39 @@ python scripts/prepare_multicbr_datasets.py MealRec+H MealRec+L --source-root Ra
 
 已有数据集仍可使用转换脚本原来的默认模式（合并 tune/test）；新的 MealRec 调参流程应使用上述独立验证集模式。
 
-## 自动分阶段调参
+## 当前一轮：围绕首轮最佳参数细调
+
+两份默认配置已更新为首轮验证集选出的参数，H 的训练上限延长至 80 轮，L 保持 200 轮：
+
+| 数据集 | 初始学习率 | 初始正则 | 最大 epoch | 传播层数 |
+|---|---|---|---|---|
+| MealRec+H | 0.004 | 0.0002 | 80 | 1 |
+| MealRec+L | 0.001 | 0.000025 | 200 | 1 |
+
+固定 seed=2024、维度 64、batch=1024。每个数据集先从头训练一次初始配置，再调学习率、固定最佳学习率后调正则。两阶段分别取初始值的 `[0.75, 0.9, 1.1, 1.25]` 倍，各两小两大；每个数据集 `1+4+4=9` 次，合计 18 次训练。层数固定为 1，不进行层数搜索。
+
+| 数据集 | 四个学习率候选 | 四个正则候选 |
+|---|---|---|
+| MealRec+H | 0.003, 0.0036, 0.0044, 0.005 | 0.00015, 0.00018, 0.00022, 0.00025 |
+| MealRec+L | 0.00075, 0.0009, 0.0011, 0.00125 | 0.00001875, 0.0000225, 0.0000275, 0.00003125 |
+
+查看本轮计划，不训练：
+
+```powershell
+python scripts/auto_search.py --spec scripts/search_specs/mealrec_finetune.json --dry-run
+```
+
+运行本轮细调：
+
+```powershell
+python scripts/auto_search.py --spec scripts/search_specs/mealrec_finetune.json
+```
+
+本轮输出独立存放在 `results/search_runs/mealrec_finetune/`，不会覆盖首轮 `mealrec_staged/` 的结果和向量。最佳汇总为 `mealrec_finetune/best_results.json`，各数据集最终向量仍位于各自 `best_embeddings/` 下。继续使用验证集选优、最终测试集评估和断点续跑逻辑。
+
+## 已完成首轮：较大范围分阶段搜索
+
+首轮规格 `mealrec_staged.json` 引用 `conf/search_baselines/` 中冻结的原始配置，保留首轮的初始值和训练预算。以下命令用于复查首轮，不是当前细调入口。
 
 只查看计划，不训练：
 
@@ -57,7 +89,7 @@ MealRec 配置中的 `test.set` 兼容现有模型接口，实际指向 `valid.t
 
 ## 结果与断点续跑
 
-默认输出目录为 `results/search_runs/mealrec_staged/`，两个数据集分别位于 `MealRec_H/`、`MealRec_L/`：
+首轮输出目录为 `results/search_runs/mealrec_staged/`，当前细调目录为 `results/search_runs/mealrec_finetune/`。两个目录内部结构一致，数据集分别位于 `MealRec_H/`、`MealRec_L/`：
 
 - `00_initial/`、`01_learnRate/`、`02_reg_lambda/`：实验各自的配置、日志、向量和 JSONL/CSV 汇总；CSV 包含学习率、正则、最佳轮次及验证指标。
 - `best.conf`：验证集选出的最佳配置，仍然使用验证集作为 `test.set`。
@@ -67,7 +99,7 @@ MealRec 配置中的 `test.set` 兼容现有模型接口，实际指向 `valid.t
 
 重复运行同一命令会复用成功且向量文件仍存在的实验。失败和超时最多尝试三次；任何候选失败会阻止该数据集进入下一阶段，修复后重新运行即可。签名包含完整有效配置、训练/验证数据内容和模型相关源码，改变这些内容会重新训练。相同选定向量、相同测试内容的最终评估也会复用。
 
-13 次训练仅覆盖既定候选范围，不保证全局最优。最佳轮次落在 epoch 上限时，结果标记 `epoch_limit_reached`，应结合日志判断是否需要增加训练预算。
+每轮训练仅覆盖其既定候选范围，不保证全局最优。最佳轮次落在 epoch 上限时，结果标记 `epoch_limit_reached`，应结合日志判断是否需要增加训练预算。
 
 ## 其他入口和验证
 

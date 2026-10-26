@@ -21,10 +21,11 @@ def candidate_values(initial: str, multipliers: list[Any]) -> list[str]:
     factors = [Decimal(str(value)) for value in multipliers]
     if not center.is_finite() or center <= 0:
         raise ValueError("Initial learning rate and regularization must be positive and finite.")
-    if (len(factors) != 6 or any(not f.is_finite() or f <= 0 for f in factors)
-            or len(set(factors)) != 6 or sum(f < 1 for f in factors) != 3
-            or sum(f > 1 for f in factors) != 3):
-        raise ValueError("Provide six distinct positive multipliers: three below 1 and three above 1.")
+    count = len(factors)
+    if (not count or count % 2 or any(not f.is_finite() or f <= 0 for f in factors)
+            or len(set(factors)) != count or sum(f < 1 for f in factors) != count // 2
+            or sum(f > 1 for f in factors) != count // 2):
+        raise ValueError("Provide an even number of distinct positive multipliers: half below 1 and half above 1.")
     return [format(center * factor, "f") for factor in factors]
 
 
@@ -107,8 +108,8 @@ def dataset_plan(config_path: Path, multipliers: list[Any], check_files: bool) -
         "initial": {key: config[key] for key in ("learnRate", "reg.lambda")},
         "learning_rates": candidate_values(config["learnRate"], multipliers),
         "regularization_values": candidate_values(config["reg.lambda"], multipliers),
-        "regularization_stage_learning_rate": "best of baseline and six learning-rate trials",
-        "training_trials": 13, "final_test_evaluations": 1,
+        "regularization_stage_learning_rate": f"best of baseline and {len(multipliers)} learning-rate trials",
+        "training_trials": 1 + 2 * len(multipliers), "final_test_evaluations": 1,
     }
 
 
@@ -234,10 +235,10 @@ def run_staged_search(spec_path: Path, dry_run: bool = False) -> int:
     if len(set(names)) != len(names):
         raise ValueError("Dataset names must be unique.")
     payload = {"selection_split": "validation", "multipliers": multipliers, "datasets": plans,
-               "total_training_trials": 13 * len(plans), "dry_run": dry_run}
+               "total_training_trials": sum(plan["training_trials"] for plan in plans), "dry_run": dry_run}
     search.dump_json(output_dir / "search_plan.json", payload)
     for plan in plans:
-        print(f"{plan['dataset']}: initial + 6 learning rates + 6 regularization values")
+        print(f"{plan['dataset']}: initial + {len(plan['learning_rates'])} learning rates + {len(plan['regularization_values'])} regularization values")
         print(f"  learnRate: {plan['learning_rates']}")
         print(f"  reg.lambda: {plan['regularization_values']}")
     if dry_run:

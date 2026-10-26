@@ -32,7 +32,8 @@ class StagedSearchTests(unittest.TestCase):
             (data / "test.txt").write_text("u1 b0 1\n")
             config = search.read_conf_file(search.REPO_ROOT / "conf" / f"LightGCN_{name}.conf")
             config.update({"training.set": str(data / "train.txt"), "test.set": str(data / "valid.txt"),
-                           "final.test.set": str(data / "test.txt"), "num.max.epoch": "2", "reg.lambda": reg})
+                           "final.test.set": str(data / "test.txt"), "num.max.epoch": "2",
+                           "learnRate": "0.002", "reg.lambda": reg})
             path = self.root / f"{name}.conf"
             search.write_conf_file(path, config)
             self.configs.append(path)
@@ -83,6 +84,9 @@ class StagedSearchTests(unittest.TestCase):
                          ["0.0002", "0.00050", "0.0010", "0.004", "0.008", "0.020"])
         with self.assertRaises(ValueError):
             staged.candidate_values("0.002", [0.1, 0.25, 0.5, 1, 2, 4])
+        for invalid in ([], [0.75, 0.9, 1.1], [0.75, 0.75, 1.1, 1.25], [0.5, 0.75, 0.9, 1.1]):
+            with self.subTest(multipliers=invalid), self.assertRaises(ValueError):
+                staged.candidate_values("0.004", invalid)
         incumbent = {"status": "success", "metrics": {"20": {"NDCG": 0.5, "Recall": 0.5}}}
         self.assertIs(staged.select_best([incumbent, dict(incumbent)]), incumbent)
         with self.assertRaises(ValueError):
@@ -104,6 +108,62 @@ class StagedSearchTests(unittest.TestCase):
         self.run_pipeline()
         self.assertEqual(len(self.calls), 26)
         self.assertEqual(len(self.test_calls), 2)
+
+    def test_finetune_uses_four_candidates_and_carries_best_learning_rate(self):
+        spec = search.load_json(self.spec_path)
+        spec["multipliers"] = [0.75, 0.9, 1.1, 1.25]
+        search.dump_json(self.spec_path, spec)
+        centers = {"MealRec+H": ("0.004", "0.0002", "80"),
+                   "MealRec+L": ("0.001", "0.000025", "200")}
+        self.targets = {"MealRec+H": (0.0044, 0.00022), "MealRec+L": (0.0009, 0.0000225)}
+        for path in self.configs:
+            config = search.read_conf_file(path)
+            lr, reg, epochs = centers[config["dataset.name"]]
+            config.update({"learnRate": lr, "reg.lambda": reg, "num.max.epoch": epochs})
+            search.write_conf_file(path, config)
+        self.assertEqual(self.run_pipeline(), 0)
+        self.assertEqual(len(self.calls), 18)
+        self.assertEqual([count for _, count in self.test_calls], [9, 18])
+        for name, (lr, reg, epochs) in centers.items():
+            calls = [config for config in self.calls if config["dataset.name"] == name]
+            self.assertEqual(len(calls), 9)
+            self.assertEqual(calls[0]["learnRate"], lr)
+            self.assertEqual(calls[0]["reg.lambda"], reg)
+            for config in calls:
+                self.assertEqual(config["num.max.epoch"], epochs)
+                self.assertEqual(config["LightGCN"], "-n_layer 1")
+                self.assertEqual(config["seed"], "2024")
+            rates = [float(config["learnRate"]) for config in calls[1:5]]
+            self.assertEqual(sum(rate < float(lr) for rate in rates), 2)
+            self.assertEqual(sum(rate > float(lr) for rate in rates), 2)
+            for config in calls[5:]:
+                self.assertEqual(float(config["learnRate"]), self.targets[name][0])
+            result = search.load_json(self.root / "runs" / search.safe_name(name) / "best_result.json")
+            self.assertEqual(float(result["parameters"]["reg.lambda"]), self.targets[name][1])
+        self.run_pipeline()
+        self.assertEqual(len(self.calls), 18)
+        plan = search.load_json(self.root / "runs" / "search_plan.json")
+        self.assertEqual(plan["total_training_trials"], 18)
+
+    def test_actual_specs_keep_coarse_history_and_finetune_outputs_separate(self):
+        coarse = search.load_json(search.REPO_ROOT / "scripts/search_specs/mealrec_staged.json")
+        fine = search.load_json(search.REPO_ROOT / "scripts/search_specs/mealrec_finetune.json")
+        self.assertNotEqual(search.to_repo_path(coarse["output_dir"]), search.to_repo_path(fine["output_dir"]))
+        expected = {"MealRec+H": ("0.004", "0.0002", "80"), "MealRec+L": ("0.001", "0.000025", "200")}
+        for spec, count in ((coarse, 13), (fine, 9)):
+            for entry in spec["datasets"]:
+                path = search.to_repo_path(entry["base_config"])
+                plan = staged.dataset_plan(path, spec["multipliers"], check_files=False)
+                self.assertEqual(plan["training_trials"], count)
+                config = search.read_conf_file(path)
+                if spec is fine:
+                    lr, reg, epochs = expected[config["dataset.name"]]
+                    self.assertEqual((config["learnRate"], config["reg.lambda"], config["num.max.epoch"]),
+                                     (lr, reg, epochs))
+                    self.assertEqual(config["LightGCN"], "-n_layer 1")
+                else:
+                    self.assertEqual(config["learnRate"], "0.002")
+                    self.assertEqual(config["num.max.epoch"], "50" if config["dataset.name"].endswith("H") else "200")
 
     def test_failures_are_retried_and_block_stage_two_until_resume(self):
         spec = search.load_json(self.spec_path)
